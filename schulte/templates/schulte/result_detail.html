@@ -1,0 +1,36 @@
+{% extends "schulte/base.html" %}
+{% block title %}Сессия {{ session.pk }}{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Сессия {{ session.pk }}</h1>
+      <p class="lede">{{ session.pilot.display_name }} · {{ session.get_check_type_display }} · {{ session.scheduled_at|date:"Y-m-d H:i" }}</p>
+    </div>
+    {% if conclude %}
+      <a class="button button-copper" href="{% url 'conclusion' session.pk %}">Заключение о допуске</a>
+    {% endif %}
+  </div>
+  {% if result %}
+    <section class="panel">
+      {% include "schulte/_metrics.html" %}
+      {% if conclusion %}
+        <p>Заключение: <span class="badge {{ conclusion.decision_kind }}">{{ conclusion.get_decision_display }}</span></p>
+      {% endif %}
+    </section>
+  {% else %}
+    <p class="banner warn">Результат сессии отсутствует.</p>
+  {% endif %}
+  <div class="stack" style="margin-top:16px">
+    {% for table in tables %}
+      <section class="panel">
+        <h2>Таблица {{ table.order }} · <span class="num">{{ table.time_sec|floatformat:1 }} с</span></h2>
+        <p class="muted">{{ table.get_layout_display }}, {{ table.size }}×{{ table.size }}</p>
+        <div class="schulte" style="--n: {{ table.size }}">
+          {% for number in table.numbers %}
+            <span>{{ number }}</span>
+          {% endfor %}
+        </div>
+      </section>
+    {% endfor %}
+  </div>
+{% endblock %}

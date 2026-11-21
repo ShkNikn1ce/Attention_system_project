@@ -1,0 +1,13 @@
+{% extends "schulte/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+  <h1>{{ title }}</h1>
+  <p class="lede">Логин, ФИО и табельный номер обязательны. Пароль — не короче шести символов.</p>
+  <section class="panel">
+    <form method="post">
+      {% csrf_token %}
+      {% include "schulte/_form.html" %}
+      <button type="submit">Сохранить</button>
+    </form>
+  </section>
+{% endblock %}

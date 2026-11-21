@@ -1,0 +1,21 @@
+{% extends "schulte/base.html" %}
+{% block title %}Служба безопасности{% endblock %}
+{% block content %}
+  <h1>Передачи в службу безопасности</h1>
+  <section class="panel">
+    {% if not handoffs %}
+      <p>Передач пока нет.</p>
+    {% else %}
+      <table>
+        <tr><th>Когда</th><th>Вид</th><th>Содержание</th></tr>
+        {% for item in handoffs %}
+          <tr>
+            <td>{{ item.created_at|date:"Y-m-d H:i" }}</td>
+            <td>{{ item.get_kind_display }}</td>
+            <td>{{ item.summary }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+  </section>
+{% endblock %}

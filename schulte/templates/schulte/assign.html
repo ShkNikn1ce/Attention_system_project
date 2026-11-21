@@ -1,0 +1,17 @@
+{% extends "schulte/base.html" %}
+{% block title %}Назначение{% endblock %}
+{% block content %}
+  <h1>Назначить тестирование</h1>
+  {% if not has_pilots %}
+    <p class="banner warn">Пилоты в базе не найдены.</p>
+  {% else %}
+    <p class="lede">Выберите пилота и тип проверки. Пилот получит уведомление.</p>
+    <section class="panel">
+      <form method="post">
+        {% csrf_token %}
+        {% include "schulte/_form.html" %}
+        <button type="submit">Подтвердить назначение</button>
+      </form>
+    </section>
+  {% endif %}
+{% endblock %}

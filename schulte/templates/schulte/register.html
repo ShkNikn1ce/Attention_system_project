@@ -1,0 +1,14 @@
+{% extends "schulte/base.html" %}
+{% block title %}Регистрация пилота{% endblock %}
+{% block content %}
+  <section class="panel">
+    <h1>Регистрация пилота</h1>
+    <p class="lede">В базе заранее есть только персонал. Пилот создаёт учётную запись сам: логин, пароль, ФИО и табельный номер.</p>
+    <form method="post">
+      {% csrf_token %}
+      {% include "schulte/_form.html" %}
+      <button type="submit">Зарегистрироваться</button>
+    </form>
+    <p class="demo"><a href="{% url 'login' %}">Уже есть учётная запись — войти</a></p>
+  </section>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "schulte/base.html" %}
+{% block title %}Сводный отчёт{% endblock %}
+{% block content %}
+  <h1>Сводный отчёт</h1>
+  <p class="lede">Укажите период и группу пилотов. В отчёт попадут только завершённые сессии выбранных пилотов.</p>
+  <section class="panel">
+    <form method="post">
+      {% csrf_token %}
+      {% include "schulte/_form.html" %}
+      <button type="submit">Сформировать отчёт</button>
+    </form>
+  </section>
+  {% if reports %}
+    <section class="panel" style="margin-top:16px">
+      <h2>Сохранённые отчёты</h2>
+      {% for report in reports %}
+        <p><a href="{% url 'report_detail' report.pk %}">{{ report.period_start }}–{{ report.period_end }}</a> · {{ report.created_at|date:"Y-m-d H:i" }}</p>
+      {% endfor %}
+    </section>
+  {% endif %}
+{% endblock %}

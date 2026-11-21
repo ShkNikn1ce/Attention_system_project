@@ -1,0 +1,62 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Система внимания{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'schulte/app.css' %}">
+</head>
+<body class="{% if user.is_authenticated %}app{% else %}auth{% endif %}">
+  {% if user.is_authenticated %}
+    <aside class="side">
+      <div class="brand">
+        <span class="brand-mark">Ш</span>
+        <div>
+          <strong>Внимание</strong>
+          <small>методика Шульте</small>
+        </div>
+      </div>
+      <nav>
+        <a href="{% url 'dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' %}class="active"{% endif %}>Обзор</a>
+        {% if user.role == 'pilot' %}
+          <a href="{% url 'test_start' %}" {% if request.resolver_match.url_name == 'test_start' or request.resolver_match.url_name == 'test_table' %}class="active"{% endif %}>Тестирование</a>
+          <a href="{% url 'my_results' %}" {% if request.resolver_match.url_name == 'my_results' or request.resolver_match.url_name == 'my_result' %}class="active"{% endif %}>Мои результаты</a>
+          <a href="{% url 'notifications' %}" {% if request.resolver_match.url_name == 'notifications' %}class="active"{% endif %}>
+            Уведомления{% if unread_notifications %}<span class="badge-count">{{ unread_notifications }}</span>{% endif %}
+          </a>
+        {% elif user.role == 'psychologist' %}
+          <a href="{% url 'assign_test' %}" {% if request.resolver_match.url_name == 'assign_test' %}class="active"{% endif %}>Назначить</a>
+          <a href="{% url 'review_pilots' %}" {% if 'review' in request.resolver_match.url_name or request.resolver_match.url_name == 'conclusion' %}class="active"{% endif %}>Результаты</a>
+          <a href="{% url 'dynamics' %}" {% if 'dynamics' in request.resolver_match.url_name %}class="active"{% endif %}>Динамика</a>
+        {% else %}
+          <a href="{% url 'pilot_list' %}" {% if 'pilot' in request.resolver_match.url_name %}class="active"{% endif %}>Пилоты</a>
+          <a href="{% url 'norms' %}" {% if request.resolver_match.url_name == 'norms' %}class="active"{% endif %}>Нормы</a>
+          <a href="{% url 'reports' %}" {% if 'report' in request.resolver_match.url_name %}class="active"{% endif %}>Отчёты</a>
+          <a href="{% url 'security_log' %}" {% if request.resolver_match.url_name == 'security_log' %}class="active"{% endif %}>Служба безопасности</a>
+        {% endif %}
+      </nav>
+      <div class="side-user">
+        <div>
+          <strong>{{ user.display_name }}</strong><br>
+          <small>{{ user.get_role_display }}</small>
+        </div>
+        <form method="post" action="{% url 'logout' %}">
+          {% csrf_token %}
+          <button type="submit">Выйти</button>
+        </form>
+      </div>
+    </aside>
+  {% endif %}
+  <main>
+    {% if messages %}
+      <ul class="messages">
+        {% for message in messages %}
+          <li class="banner {{ message.tags }}">{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

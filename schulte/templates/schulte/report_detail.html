@@ -1,0 +1,20 @@
+{% extends "schulte/base.html" %}
+{% block title %}Отчёт {{ report.period_start }}–{{ report.period_end }}{% endblock %}
+{% block content %}
+  <h1>Сводный отчёт {{ report.period_start }}–{{ report.period_end }}</h1>
+  <p class="lede">Пилотов: {{ report.lines.all|length }}. Отчёт передан в службу безопасности.</p>
+  <section class="panel">
+    <table>
+      <tr><th>Пилот</th><th>Сессий</th><th>Средний ЭР</th><th>Средний ВР</th><th>Средний ПУ</th></tr>
+      {% for line in report.lines.all %}
+        <tr>
+          <td>{{ line.full_name }}</td>
+          <td class="num">{{ line.session_count }}</td>
+          <td class="num">{{ line.avg_er|floatformat:2 }}</td>
+          <td class="num">{{ line.avg_vr|floatformat:3 }}</td>
+          <td class="num">{{ line.avg_pu|floatformat:3 }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  </section>
+{% endblock %}

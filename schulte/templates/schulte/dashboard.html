@@ -1,0 +1,86 @@
+{% extends "schulte/base.html" %}
+{% block title %}Обзор{% endblock %}
+{% block content %}
+  <h1>{{ user.display_name }}</h1>
+  <p class="lede">{{ user.get_role_display }}. Последний вход: {% if user.last_login %}{{ user.last_login|date:"Y-m-d H:i" }}{% else %}только что{% endif %}.</p>
+
+  {% if user.role == 'pilot' %}
+    <div class="grid-2">
+      <section class="panel">
+        <h2>Назначенное тестирование</h2>
+        {% if assigned %}
+          <p>{{ assigned.get_check_type_display }} проверка, {{ assigned.scheduled_at|date:"Y-m-d H:i" }}.</p>
+          <p class="muted">Психолог: {{ assigned.psychologist.display_name }}</p>
+          <a class="button button-copper" href="{% url 'test_start' %}">Пройти тестирование</a>
+        {% else %}
+          <p>Для вас не назначено тестирование.</p>
+        {% endif %}
+      </section>
+      <section class="panel">
+        <h2>Уведомления</h2>
+        {% for note in notes %}
+          <p>{{ note.text }}</p>
+        {% empty %}
+          <p>Уведомлений нет.</p>
+        {% endfor %}
+      </section>
+    </div>
+    <section class="panel" style="margin-top:16px">
+      <h2>Последние результаты</h2>
+      {% if sessions %}
+        <table>
+          <tr><th>Сессия</th><th>Когда</th><th>ЭР</th><th>ВР</th><th>ПУ</th></tr>
+          {% for session in sessions %}
+            <tr>
+              <td><a href="{% url 'my_result' session.pk %}">{{ session.pk }}</a></td>
+              <td>{{ session.scheduled_at|date:"Y-m-d H:i" }}</td>
+              <td class="num">{{ session.result.er|floatformat:2 }}</td>
+              <td class="num">{{ session.result.vr|floatformat:3 }}</td>
+              <td class="num">{{ session.result.pu|floatformat:3 }}</td>
+            </tr>
+          {% endfor %}
+        </table>
+      {% else %}
+        <p>Сохранённых результатов нет.</p>
+      {% endif %}
+    </section>
+  {% elif user.role == 'psychologist' %}
+    <div class="cards">
+      <a class="card" href="{% url 'assign_test' %}">Назначить тестирование<span>Выбрать пилота и тип проверки</span></a>
+      <a class="card" href="{% url 'review_pilots' %}">Результаты<span>Время таблиц, ЭР, ВР и ПУ</span></a>
+      <a class="card" href="{% url 'dynamics' %}">Динамика<span>Не меньше двух завершённых сессий</span></a>
+    </div>
+    <section class="panel" style="margin-top:16px">
+      <h2>Недавние назначения</h2>
+      {% if recent_sessions %}
+        <table>
+          <tr><th>Пилот</th><th>Тип</th><th>Когда</th><th>Статус</th></tr>
+          {% for session in recent_sessions %}
+            <tr>
+              <td>{{ session.pilot.display_name }}</td>
+              <td>{{ session.get_check_type_display }}</td>
+              <td>{{ session.scheduled_at|date:"Y-m-d H:i" }}</td>
+              <td><span class="badge {{ session.status_kind }}">{{ session.get_status_display }}</span></td>
+            </tr>
+          {% endfor %}
+        </table>
+      {% else %}
+        <p>Назначений пока нет.</p>
+      {% endif %}
+    </section>
+  {% else %}
+    <div class="cards">
+      <a class="card" href="{% url 'pilot_list' %}">Пилоты<span>В базе: {{ pilot_count }}</span></a>
+      <a class="card" href="{% url 'norms' %}">Нормы допуска<span>{% if norm %}{{ norm }}{% else %}Нормы допуска ещё не заданы{% endif %}</span></a>
+      <a class="card" href="{% url 'reports' %}">Сводный отчёт<span>Период и группа пилотов</span></a>
+    </div>
+    <section class="panel" style="margin-top:16px">
+      <h2>Последние отчёты</h2>
+      {% for report in reports %}
+        <p><a href="{% url 'report_detail' report.pk %}">{{ report.period_start }}–{{ report.period_end }}</a></p>
+      {% empty %}
+        <p>Отчётов пока нет.</p>
+      {% endfor %}
+    </section>
+  {% endif %}
+{% endblock %}

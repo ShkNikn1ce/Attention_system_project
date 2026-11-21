@@ -1,0 +1,20 @@
+{% extends "schulte/base.html" %}
+{% block title %}Динамика{% endblock %}
+{% block content %}
+  <h1>Динамика результатов</h1>
+  {% if not pilots %}
+    <p class="banner warn">Пилоты в базе не найдены.</p>
+  {% else %}
+    <section class="panel">
+      <table>
+        <tr><th>Пилот</th><th></th></tr>
+        {% for pilot in pilots %}
+          <tr>
+            <td>{{ pilot.display_name }}</td>
+            <td><a href="{% url 'dynamics_pilot' pilot.pk %}">Показать динамику</a></td>
+          </tr>
+        {% endfor %}
+      </table>
+    </section>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "schulte/base.html" %}
+{% block title %}Пилоты{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Данные о пилотах</h1>
+      <p class="lede">Пилотов в базе: {{ pilots|length }}</p>
+    </div>
+    <a class="button button-copper" href="{% url 'pilot_create' %}">Добавить пилота</a>
+  </div>
+  <section class="panel">
+    <table>
+      <tr><th>Код</th><th>ФИО</th><th>Логин</th><th>Табельный номер</th><th>Должность</th><th></th></tr>
+      {% for pilot in pilots %}
+        <tr>
+          <td>{{ pilot.pk }}</td>
+          <td>{{ pilot.display_name }}</td>
+          <td>{{ pilot.username }}</td>
+          <td>{{ pilot.employee_number }}</td>
+          <td>{{ pilot.position }}</td>
+          <td class="actions">
+            <a href="{% url 'pilot_edit' pilot.pk %}">Изменить</a>
+            <a href="{% url 'pilot_delete' pilot.pk %}">Удалить</a>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6">Пилотов в базе нет.</td></tr>
+      {% endfor %}
+    </table>
+  </section>
+{% endblock %}

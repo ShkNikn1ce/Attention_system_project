@@ -1,0 +1,26 @@
+{% extends "schulte/base.html" %}
+{% block title %}{{ pilot.display_name }}{% endblock %}
+{% block content %}
+  <h1>{{ pilot.display_name }}</h1>
+  <p class="lede">{{ pilot.employee_number }}{% if pilot.position %} · {{ pilot.position }}{% endif %}</p>
+  {% if not sessions %}
+    <p class="banner warn">У пилота нет завершённых сессий.</p>
+  {% else %}
+    <section class="panel">
+      <table>
+        <tr><th>Сессия</th><th>Когда</th><th>Тип</th><th>ЭР</th><th>ВР</th><th>ПУ</th></tr>
+        {% for session in sessions %}
+          <tr>
+            <td><a href="{% url 'review_session' session.pk %}">{{ session.pk }}</a></td>
+            <td>{{ session.scheduled_at|date:"Y-m-d H:i" }}</td>
+            <td>{{ session.get_check_type_display }}</td>
+            <td class="num">{{ session.result.er|floatformat:2 }}</td>
+            <td class="num">{{ session.result.vr|floatformat:3 }}</td>
+            <td class="num">{{ session.result.pu|floatformat:3 }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </section>
+  {% endif %}
+  <p><a href="{% url 'dynamics_pilot' pilot.pk %}">Динамика этого пилота</a></p>
+{% endblock %}

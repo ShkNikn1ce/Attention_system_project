@@ -1,0 +1,22 @@
+{% extends "schulte/base.html" %}
+{% block title %}Вход — Система внимания{% endblock %}
+{% block content %}
+  <section class="panel">
+    <h1>Вход в систему</h1>
+    <p class="lede">Введите логин и пароль. После трёх ошибок вход для этого логина блокируется.</p>
+    {% if error %}<p class="banner bad">Ошибка входа: {{ error }}</p>{% endif %}
+    {% if hint %}<p class="banner warn">{{ hint }}</p>{% endif %}
+    <form method="post">
+      {% csrf_token %}
+      <label class="field"><span>Логин</span><input class="input" name="username" autocomplete="username" required></label>
+      <label class="field"><span>Пароль</span><input class="input" type="password" name="password" autocomplete="current-password" required></label>
+      <button type="submit">Войти</button>
+    </form>
+    <p class="demo">
+      Персонал входит готовыми учётными записями:<br>
+      администратор <code>admin</code> / <code>admin123</code><br>
+      психолог <code>psy</code> / <code>psy12345</code><br>
+      <a href="{% url 'register' %}">Регистрация пилота</a>
+    </p>
+  </section>
+{% endblock %}

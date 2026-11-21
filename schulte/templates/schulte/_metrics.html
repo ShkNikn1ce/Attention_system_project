@@ -1,0 +1,6 @@
+<div class="metrics">
+  <div class="metric"><strong>{{ result.er|floatformat:2 }}</strong><span>ЭР, эффективность</span></div>
+  <div class="metric"><strong>{{ result.vr|floatformat:3 }}</strong><span>ВР, врабатываемость</span></div>
+  <div class="metric"><strong>{{ result.pu|floatformat:3 }}</strong><span>ПУ, устойчивость</span></div>
+</div>
+<p class="lede">ЭР — среднее время пяти таблиц. ВР — время первой таблицы, делённое на ЭР. ПУ — время четвёртой, делённое на ЭР.</p>

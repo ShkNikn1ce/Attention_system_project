@@ -1,0 +1,12 @@
+{% extends "schulte/base.html" %}
+{% block title %}Уведомления{% endblock %}
+{% block content %}
+  <h1>Уведомления</h1>
+  <section class="panel">
+    {% for note in notes %}
+      <p>{{ note.created_at|date:"Y-m-d H:i" }} — {{ note.text }}</p>
+    {% empty %}
+      <p>Уведомлений нет.</p>
+    {% endfor %}
+  </section>
+{% endblock %}

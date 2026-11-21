@@ -1,0 +1,21 @@
+{% extends "schulte/base.html" %}
+{% block title %}Результаты пилотов{% endblock %}
+{% block content %}
+  <h1>Результаты тестирования</h1>
+  {% if not pilots %}
+    <p class="banner warn">Пилоты в базе не найдены.</p>
+  {% else %}
+    <section class="panel">
+      <table>
+        <tr><th>Пилот</th><th>Табельный номер</th><th>Должность</th></tr>
+        {% for pilot in pilots %}
+          <tr>
+            <td><a href="{% url 'review_pilot' pilot.pk %}">{{ pilot.display_name }}</a></td>
+            <td>{{ pilot.employee_number }}</td>
+            <td>{{ pilot.position }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </section>
+  {% endif %}
+{% endblock %}

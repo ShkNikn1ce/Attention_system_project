@@ -1,0 +1,63 @@
+{% extends "schulte/base.html" %}
+{% block title %}Таблица {{ order }}{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Таблица {{ order }} из {{ total }}</h1>
+      <p class="lede">{{ layout_label }}. Нажимайте числа по порядку, начиная с 1.</p>
+    </div>
+    <div class="timer" id="timer" data-started="{{ started_at }}">0.0 с</div>
+  </div>
+  <p class="hint" id="hint">Ищите число 1</p>
+  <div class="schulte" style="--n: {{ size }}">
+    {% for number in numbers %}
+      <button type="button" class="cell" data-n="{{ number }}">{{ number }}</button>
+    {% endfor %}
+  </div>
+  <div class="actions">
+    <form id="done-form" method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="done">
+      <input type="hidden" name="sequence" id="sequence" value="">
+    </form>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="cancel">
+      <button class="button-ghost" type="submit">Прервать тестирование</button>
+    </form>
+  </div>
+  <noscript><p class="banner warn">Для прохождения таблиц нужен JavaScript: числа отмечаются нажатием.</p></noscript>
+  <script>
+    const total = {{ size }} * {{ size }};
+    let next = 1;
+    const found = [];
+    const timer = document.getElementById("timer");
+    const started = new Date(timer.dataset.started).getTime();
+    setInterval(() => {
+      const seconds = Math.max(0, (Date.now() - started) / 1000);
+      timer.textContent = seconds.toFixed(1) + " с";
+    }, 100);
+    document.querySelectorAll(".cell").forEach((cell) => {
+      cell.addEventListener("click", () => {
+        const value = Number(cell.dataset.n);
+        if (value !== next) {
+          cell.classList.add("wrong");
+          window.setTimeout(() => cell.classList.remove("wrong"), 280);
+          return;
+        }
+        cell.classList.add("found");
+        cell.disabled = true;
+        found.push(value);
+        next += 1;
+        const hint = document.getElementById("hint");
+        if (next <= total) {
+          hint.textContent = "Ищите число " + next;
+          return;
+        }
+        hint.textContent = "Таблица пройдена";
+        document.getElementById("sequence").value = found.join(",");
+        document.getElementById("done-form").submit();
+      });
+    });
+  </script>
+{% endblock %}

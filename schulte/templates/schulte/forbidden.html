@@ -1,0 +1,7 @@
+{% extends "schulte/base.html" %}
+{% block title %}Нет доступа{% endblock %}
+{% block content %}
+  <h1>Операция недоступна</h1>
+  <p class="lede">Операция недоступна для роли «{{ user.get_role_display|lower }}».</p>
+  <a class="button" href="{% url 'dashboard' %}">На обзор</a>
+{% endblock %}

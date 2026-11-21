@@ -1,0 +1,16 @@
+{% extends "schulte/base.html" %}
+{% block title %}Удаление пилота{% endblock %}
+{% block content %}
+  <h1>Удалить {{ pilot.display_name }}?</h1>
+  {% if blocked %}
+    <p class="banner bad">Нельзя удалить пилота: у него есть сессии тестирования.</p>
+    <a class="button" href="{% url 'pilot_list' %}">К списку</a>
+  {% else %}
+    <p class="lede">Учётная запись {{ pilot.username }} ({{ pilot.employee_number }}) будет удалена.</p>
+    <form method="post" class="actions">
+      {% csrf_token %}
+      <button class="button-bad" type="submit">Удалить пилота</button>
+      <a class="button button-ghost" href="{% url 'pilot_list' %}">Отмена</a>
+    </form>
+  {% endif %}
+{% endblock %}

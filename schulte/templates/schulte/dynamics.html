@@ -1,0 +1,32 @@
+{% extends "schulte/base.html" %}
+{% block title %}Динамика — {{ pilot.display_name }}{% endblock %}
+{% block content %}
+  <h1>{{ pilot.display_name }}</h1>
+  {% if not enough %}
+    <p class="banner warn">Недостаточно данных: нужно не менее двух завершённых сессий.</p>
+  {% else %}
+    <section class="panel">
+      <table>
+        <tr><th>Дата и время</th><th>ЭР</th><th>ВР</th><th>ПУ</th></tr>
+        {% for point in points %}
+          <tr>
+            <td>{{ point.at|date:"Y-m-d H:i" }}</td>
+            <td class="num">{{ point.er|floatformat:2 }}</td>
+            <td class="num">{{ point.vr|floatformat:3 }}</td>
+            <td class="num">{{ point.pu|floatformat:3 }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </section>
+    <div class="charts" style="margin-top:16px">
+      {% for chart in charts %}
+        <section class="panel">
+          <h2>{{ chart.title }} <span class="muted">{{ chart.low|floatformat:3 }}–{{ chart.high|floatformat:3 }}</span></h2>
+          <svg class="chart" viewBox="0 0 640 180" role="img">
+            <polyline points="{{ chart.points }}"></polyline>
+          </svg>
+        </section>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

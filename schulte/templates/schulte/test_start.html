@@ -1,0 +1,33 @@
+{% extends "schulte/base.html" %}
+{% block title %}Тестирование{% endblock %}
+{% block content %}
+  <h1>Тестирование по методике Шульте</h1>
+  {% if not session %}
+    <p class="banner warn">Для вас не назначено тестирование.</p>
+  {% else %}
+    <p class="lede">Инструкция: находите числа по возрастанию как можно быстрее. Будет пять таблиц. Время считает сервер с момента показа каждой таблицы.</p>
+    <section class="panel">
+      <p>{{ session.get_check_type_display }} проверка от {{ session.scheduled_at|date:"Y-m-d H:i" }}.</p>
+      <form method="post" class="stack">
+        {% csrf_token %}
+        <div>
+          <div>Размер таблицы</div>
+          <div class="choices">
+            {% for size in sizes %}
+              <label class="choice"><input type="radio" name="size" value="{{ size }}" {% if forloop.first %}checked{% endif %}> {{ size }}×{{ size }}</label>
+            {% endfor %}
+          </div>
+        </div>
+        <div>
+          <div>Расположение чисел</div>
+          <div class="choices">
+            {% for value, label in layouts %}
+              <label class="choice"><input type="radio" name="layout" value="{{ value }}" {% if forloop.first %}checked{% endif %}> {{ label }}</label>
+            {% endfor %}
+          </div>
+        </div>
+        <button class="button-copper" type="submit">Подтвердить готовность</button>
+      </form>
+    </section>
+  {% endif %}
+{% endblock %}

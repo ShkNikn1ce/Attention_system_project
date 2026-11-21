@@ -1,0 +1,24 @@
+{% extends "schulte/base.html" %}
+{% block title %}Мои результаты{% endblock %}
+{% block content %}
+  <h1>Мои результаты</h1>
+  {% if not sessions %}
+    <p class="banner warn">Сохранённых результатов нет.</p>
+  {% else %}
+    <section class="panel">
+      <table>
+        <tr><th>Сессия</th><th>Когда</th><th>Тип</th><th>ЭР</th><th>ВР</th><th>ПУ</th></tr>
+        {% for session in sessions %}
+          <tr>
+            <td><a href="{% url 'my_result' session.pk %}">{{ session.pk }}</a></td>
+            <td>{{ session.scheduled_at|date:"Y-m-d H:i" }}</td>
+            <td>{{ session.get_check_type_display }}</td>
+            <td class="num">{{ session.result.er|floatformat:2 }}</td>
+            <td class="num">{{ session.result.vr|floatformat:3 }}</td>
+            <td class="num">{{ session.result.pu|floatformat:3 }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </section>
+  {% endif %}
+{% endblock %}

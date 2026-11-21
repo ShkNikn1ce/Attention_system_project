@@ -1,0 +1,32 @@
+{% extends "schulte/base.html" %}
+{% block title %}Нормы допуска{% endblock %}
+{% block content %}
+  <h1>Нормы допуска</h1>
+  {% if current %}
+    <p class="lede">Действующая норма: {{ current }}</p>
+  {% else %}
+    <p class="banner warn">Нормы допуска ещё не заданы.</p>
+  {% endif %}
+  <section class="panel">
+    <form method="post">
+      {% csrf_token %}
+      {% include "schulte/_form.html" %}
+      <button type="submit">Сохранить нормы</button>
+    </form>
+  </section>
+  {% if history %}
+    <section class="panel" style="margin-top:16px">
+      <h2>Версии</h2>
+      <table>
+        <tr><th>Когда</th><th>Диапазоны</th><th>Использована</th></tr>
+        {% for item in history %}
+          <tr>
+            <td>{{ item.created_at|date:"Y-m-d H:i" }}</td>
+            <td>{{ item }}</td>
+            <td>{% if item.conclusions.exists %}да{% else %}нет{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </section>
+  {% endif %}
+{% endblock %}

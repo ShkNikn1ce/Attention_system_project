@@ -12,7 +12,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from schulte.authz import role_required
 from schulte.forms import (
-    AdministratorForm, AssignForm, ConclusionForm, NormForm, PilotForm, PsychologistForm, ReportForm,
+    AssignForm, ConclusionForm, NormForm, PilotForm, PsychologistForm, ReportForm,
 )
 from schulte.models import (
     AdmissionNorm, Conclusion, LoginThrottle, SchulteTable, SecurityHandoff, SummaryReport,
@@ -33,10 +33,6 @@ def _assigned_session(user: User) -> TestSession | None:
         .order_by("scheduled_at", "id")
         .first()
     )
-
-
-def _admin_exists() -> bool:
-    return User.objects.filter(role=User.Role.ADMIN).exists()
 
 
 def _clear_run(request) -> None:
@@ -67,24 +63,9 @@ def _run_session(request):
 
 
 @require_http_methods(["GET", "POST"])
-def setup_view(request):
-    """Первый администратор. После его появления страница больше не создаёт учётки."""
-    if _admin_exists():
-        return redirect("login")
-    form = AdministratorForm(request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        admin = form.save()
-        login(request, admin)
-        return redirect("dashboard")
-    return render(request, "schulte/setup.html", {"form": form})
-
-
-@require_http_methods(["GET", "POST"])
 def login_view(request):
     if request.user.is_authenticated:
         return redirect("dashboard")
-    if request.method == "GET" and not User.objects.exists():
-        return redirect("setup")
     error = None
     hint = None
     if request.method == "POST":
@@ -107,11 +88,7 @@ def login_view(request):
                 login(request, user)
                 messages.success(request, f"Открыт интерфейс: {user.get_role_display().lower()}")
                 return redirect("dashboard")
-    return render(request, "schulte/login.html", {
-        "error": error,
-        "hint": hint,
-        "admin_exists": _admin_exists(),
-    })
+    return render(request, "schulte/login.html", {"error": error, "hint": hint})
 
 
 @require_http_methods(["GET", "POST"])

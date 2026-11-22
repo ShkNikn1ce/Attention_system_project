@@ -12,9 +12,6 @@
       <label class="field"><span>Пароль</span><input class="input" type="password" name="password" autocomplete="current-password" required></label>
       <button type="submit">Войти</button>
     </form>
-    <p class="demo">
-      {% if not admin_exists %}<a href="{% url 'setup' %}">Создать администратора</a><br>{% endif %}
-      <a href="{% url 'register' %}">Регистрация пилота</a>
-    </p>
+    <p class="demo"><a href="{% url 'register' %}">Регистрация пилота</a></p>
   </section>
 {% endblock %}

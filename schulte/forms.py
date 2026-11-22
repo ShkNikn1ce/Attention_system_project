@@ -129,45 +129,6 @@ class PsychologistForm(StyledForm):
         return psychologist
 
 
-class AdministratorForm(StyledForm):
-    username = forms.CharField(label="Логин", max_length=150)
-    password = forms.CharField(label="Пароль", widget=forms.PasswordInput)
-    full_name = forms.CharField(label="ФИО", max_length=200)
-
-    def clean_username(self) -> str:
-        username = self.cleaned_data["username"].strip()
-        if not username:
-            raise forms.ValidationError("Логин обязателен")
-        if User.objects.filter(username=username).exists():
-            raise forms.ValidationError("Логин уже занят")
-        return username
-
-    def clean_full_name(self) -> str:
-        full_name = self.cleaned_data["full_name"].strip()
-        if not full_name:
-            raise forms.ValidationError("ФИО обязательно")
-        return full_name
-
-    def clean_password(self) -> str:
-        password = self.cleaned_data.get("password") or ""
-        if len(password) < 6:
-            raise forms.ValidationError("Пароль должен содержать не менее 6 символов")
-        return password
-
-    def save(self) -> User:
-        data = self.cleaned_data
-        admin = User(
-            username=data["username"],
-            full_name=data["full_name"],
-            role=User.Role.ADMIN,
-            is_staff=True,
-            is_superuser=True,
-        )
-        admin.set_password(data["password"])
-        admin.save()
-        return admin
-
-
 class NormForm(StyledForm):
     er_min = forms.FloatField(label="ЭР, минимум")
     er_max = forms.FloatField(label="ЭР, максимум")

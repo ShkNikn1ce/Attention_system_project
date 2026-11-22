@@ -1,5 +1,11 @@
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, UserManager as DjangoUserManager
 from django.db import models
+
+
+class UserManager(DjangoUserManager):
+    def create_superuser(self, username, email=None, password=None, **extra_fields):
+        extra_fields["role"] = self.model.Role.ADMIN
+        return super().create_superuser(username, email, password, **extra_fields)
 
 
 class User(AbstractUser):
@@ -16,11 +22,13 @@ class User(AbstractUser):
         "табельный номер", max_length=32, unique=True, null=True, blank=True)
     position = models.CharField("должность", max_length=120, blank=True)
 
+    objects = UserManager()
+
     class Meta:
         verbose_name = "пользователь"
         verbose_name_plural = "пользователи"
 
-    REQUIRED_FIELDS = ["email", "role"]
+    REQUIRED_FIELDS = []
 
     def display_name(self) -> str:
         return self.full_name or self.get_username()

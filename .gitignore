@@ -3,3 +3,8 @@ __pycache__/
 db.sqlite3
 .venv/
 .python/
+.idea/
+.env
+*.log
+media/
+staticfiles/

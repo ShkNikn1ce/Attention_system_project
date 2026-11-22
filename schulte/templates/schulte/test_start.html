@@ -5,29 +5,31 @@
   {% if not session %}
     <p class="banner warn">Для вас не назначено тестирование.</p>
   {% else %}
-    <p class="lede">Инструкция: находите числа по возрастанию как можно быстрее. Будет пять таблиц. Время считает сервер с момента показа каждой таблицы.</p>
+    <p class="lede">Инструкция: находите числа по возрастанию как можно быстрее. Размер и порядок задал психолог, изменить их нельзя.</p>
     <section class="panel">
       <p>{{ session.get_check_type_display }} проверка от {{ session.scheduled_at|date:"Y-m-d H:i" }}.</p>
-      <form method="post" class="stack">
-        {% csrf_token %}
-        <div>
-          <div>Размер таблицы</div>
-          <div class="choices">
-            {% for size in sizes %}
-              <label class="choice"><input type="radio" name="size" value="{{ size }}" {% if forloop.first %}checked{% endif %}> {{ size }}×{{ size }}</label>
-            {% endfor %}
-          </div>
-        </div>
-        <div>
-          <div>Расположение чисел</div>
-          <div class="choices">
-            {% for value, label in layouts %}
-              <label class="choice"><input type="radio" name="layout" value="{{ value }}" {% if forloop.first %}checked{% endif %}> {{ label }}</label>
-            {% endfor %}
-          </div>
-        </div>
-        <button class="button-copper" type="submit">Подтвердить готовность</button>
-      </form>
+      <p>Таблицы {{ session.table_size }}×{{ session.table_size }}, порядок: {{ session.get_number_order_display|lower }}.</p>
+      {% if needs_practice %}
+        <p>Перед тестированием нужно один раз пройти пробную таблицу. Результат пробной таблицы не сохраняется.</p>
+        <form method="post" class="center-action">
+          {% csrf_token %}
+          <input type="hidden" name="mode" value="practice">
+          <button class="button-copper" type="submit">Пройти пробную таблицу</button>
+        </form>
+      {% else %}
+        <p>Будет пять таблиц. Время считает сервер с момента показа каждой таблицы.</p>
+        {% if session.number_order == "по порядку" %}
+          <p>После каждой таблицы на экране останется её время. Следующая откроется по кнопке.</p>
+        {% endif %}
+        {% if session.practice_done %}
+          <p>Пробная таблица пройдена.</p>
+        {% endif %}
+        <form method="post" class="center-action">
+          {% csrf_token %}
+          <input type="hidden" name="mode" value="real">
+          <button class="button-copper" type="submit">Подтвердить готовность</button>
+        </form>
+      {% endif %}
     </section>
   {% endif %}
 {% endblock %}

@@ -4,18 +4,18 @@ from __future__ import annotations
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Callable
 
-from attention_system.markup import стереотип
+from attention_system.markup import stereotype
 
 
-@стереотип("процесс")
-class СерверПриложения:
+@stereotype("процесс")
+class AppServer:
     """Активный класс: владеет пулом потоков, каждый сеанс пользователя выполняется в своём потоке."""
 
-    def __init__(self, максПотоков: int = 50) -> None:
-        self._пул: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=максПотоков)
+    def __init__(self, max_workers: int = 50) -> None:
+        self._pool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=max_workers)
 
-    def выполнить(self, задача: Callable[[], object]) -> Future:
-        return self._пул.submit(задача)
+    def submit(self, task: Callable[[], object]) -> Future:
+        return self._pool.submit(task)
 
-    def остановить(self) -> None:
-        self._пул.shutdown(wait=True)
+    def stop(self) -> None:
+        self._pool.shutdown(wait=True)

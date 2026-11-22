@@ -17,12 +17,11 @@ from schulte.models import (
     TestSession, User,
 )
 from schulte.services import (
-    DomainError, TABLE_COUNT, assign_session, build_report, cancel_session, chart_polyline,
+    DomainError, TABLE_COUNT, assign_session, attempt_number, build_report, cancel_session, chart_series,
     dynamics_points, generate_numbers, record_table, save_conclusion, save_norm, suggest_decision,
 )
 
 RUN_KEY = "schulte_run"
-GRID_SIZES = (3, 4, 5)
 
 
 def _assigned_session(user: User) -> TestSession | None:
@@ -36,6 +35,29 @@ def _assigned_session(user: User) -> TestSession | None:
 
 def _clear_run(request) -> None:
     request.session.pop(RUN_KEY, None)
+
+
+def _run_session(request):
+    """Текущая попытка пилота. После пятой таблицы по порядку сессия уже завершена, но экран итога ещё открыт."""
+    run = request.session.get(RUN_KEY)
+    assigned = _assigned_session(request.user)
+    if not run:
+        return None, assigned
+    if assigned is not None and run.get("session_id") == assigned.id:
+        return run, assigned
+    if run.get("pause"):
+        paused = (
+            TestSession.objects.filter(
+                pk=run.get("session_id"),
+                pilot=request.user,
+                status=TestSession.Status.COMPLETED,
+            )
+            .select_related("result")
+            .first()
+        )
+        if paused is not None:
+            return run, paused
+    return run, assigned
 
 
 @require_http_methods(["GET", "POST"])
@@ -92,11 +114,14 @@ def dashboard(request):
     context = {}
     if user.role == User.Role.PILOT:
         context["assigned"] = _assigned_session(user)
-        context["sessions"] = (
-            TestSession.objects.filter(pilot=user, status=TestSession.Status.COMPLETED)
-            .select_related("result")[:5]
-        )
-        context["notes"] = user.notifications.all()[:5]
+        context["sessions"] = [
+            session for session in (
+                TestSession.objects.filter(pilot=user, status=TestSession.Status.COMPLETED)
+                .select_related("result")[:5]
+            )
+        ]
+        for session in context["sessions"]:
+            session.attempt = attempt_number(session)
     elif user.role == User.Role.PSYCHOLOGIST:
         context["recent_sessions"] = (
             user.assigned_sessions.select_related("pilot")[:6]
@@ -117,40 +142,46 @@ def test_start(request):
         return redirect("test_table")
     if run:
         _clear_run(request)
+    needs_practice = (
+        session is not None
+        and not session.practice_done
+        and not session.tables.exists()
+    )
     if request.method == "POST" and session is not None:
-        try:
-            size = int(request.POST.get("size", ""))
-        except ValueError:
-            size = 0
-        layout = request.POST.get("layout", "")
-        allowed = {value for value, _label in SchulteTable.Layout.choices}
-        if size not in GRID_SIZES or layout not in allowed:
-            messages.error(request, "Выберите размер таблицы и расположение чисел")
-        else:
+        practice = request.POST.get("mode") == "practice"
+        if practice and needs_practice:
             request.session[RUN_KEY] = {
                 "session_id": session.id,
-                "size": size,
-                "layout": layout,
+                "size": session.table_size,
+                "layout": session.number_order,
+                "practice": True,
+            }
+            request.session.modified = True
+            return redirect("test_table")
+        if not practice and not needs_practice:
+            request.session[RUN_KEY] = {
+                "session_id": session.id,
+                "size": session.table_size,
+                "layout": session.number_order,
+                "practice": False,
             }
             request.session.modified = True
             return redirect("test_table")
     return render(request, "schulte/test_start.html", {
         "session": session,
-        "sizes": GRID_SIZES,
-        "layouts": SchulteTable.Layout.choices,
+        "needs_practice": needs_practice,
     })
 
 
 @role_required(User.Role.PILOT)
 @require_http_methods(["GET", "POST"])
 def test_table(request):
-    run = request.session.get(RUN_KEY)
-    session = _assigned_session(request.user)
+    run, session = _run_session(request)
     if not run or session is None or run.get("session_id") != session.id:
         _clear_run(request)
         return redirect("test_start")
 
-    if request.method == "POST" and request.POST.get("action") == "cancel":
+    if request.method == "POST" and request.POST.get("action") == "cancel" and not run.get("practice"):
         try:
             cancel_session(session)
         except DomainError as exc:
@@ -160,10 +191,72 @@ def test_table(request):
         _clear_run(request)
         return redirect("dashboard")
 
-    size = int(run["size"])
-    layout = run["layout"]
+    size = session.table_size
+    layout = session.number_order
+    practice = bool(run.get("practice"))
+    if practice:
+        if session.practice_done:
+            _clear_run(request)
+            return redirect("test_start")
+        current = run.get("current")
+        if current is None:
+            current = {
+                "order": 1,
+                "numbers": generate_numbers(size, layout),
+                "started_at": timezone.now().isoformat(),
+            }
+            run["current"] = current
+            request.session[RUN_KEY] = run
+            request.session.modified = True
+        if request.method == "POST":
+            expected = list(range(1, size * size + 1))
+            raw = request.POST.get("sequence", "")
+            try:
+                sequence = [int(part) for part in raw.split(",") if part]
+            except ValueError:
+                sequence = []
+            if sequence != expected:
+                messages.error(request, "Числа нужно указывать строго по возрастанию, от 1 до последней клетки")
+                return redirect("test_table")
+            session.practice_done = True
+            session.save(update_fields=["practice_done"])
+            _clear_run(request)
+            return redirect("test_start")
+        return render(request, "schulte/test_table.html", {
+            "session": session,
+            "order": 1,
+            "size": size,
+            "numbers": current["numbers"],
+            "started_at": current["started_at"],
+            "layout_label": dict(SchulteTable.Layout.choices)[layout],
+            "total": 1,
+        })
+
+    total = TABLE_COUNT
+    if run.get("pause") and layout == SchulteTable.Layout.ORDERED:
+        tables = list(session.tables.order_by("order"))
+        if request.method == "POST" and request.POST.get("action") in {"next", "finish"}:
+            run["pause"] = False
+            request.session[RUN_KEY] = run
+            request.session.modified = True
+            if request.POST.get("action") == "finish" or len(tables) >= total:
+                _clear_run(request)
+                return redirect("my_result", pk=session.pk)
+            return redirect("test_table")
+        finished = len(tables) >= total
+        last = tables[-1] if tables else None
+        return render(request, "schulte/test_pause.html", {
+            "session": session,
+            "tables": tables,
+            "order": last.order if last else 0,
+            "time_sec": last.time_sec if last else 0,
+            "next_order": (last.order + 1) if last else 2,
+            "finished": finished,
+            "result": getattr(session, "result", None) if finished else None,
+        })
+
     done = session.tables.count()
-    if done >= TABLE_COUNT:
+    if done >= total:
         _clear_run(request)
         return redirect("my_result", pk=session.pk)
 
@@ -203,8 +296,12 @@ def test_table(request):
             messages.error(request, str(exc))
             return redirect("test_table")
         run["current"] = None
+        if layout == SchulteTable.Layout.ORDERED:
+            run["pause"] = True
         request.session[RUN_KEY] = run
         request.session.modified = True
+        if run.get("pause"):
+            return redirect("test_table")
         if not finished:
             return redirect("test_table")
         session.refresh_from_db()
@@ -223,7 +320,7 @@ def test_table(request):
         "numbers": current["numbers"],
         "started_at": current["started_at"],
         "layout_label": dict(SchulteTable.Layout.choices)[layout],
-        "total": TABLE_COUNT,
+        "total": total,
     })
 
 
@@ -232,6 +329,7 @@ def my_results(request):
     sessions = (
         TestSession.objects.filter(pilot=request.user, status=TestSession.Status.COMPLETED)
         .select_related("result")
+        .order_by("scheduled_at", "id")
     )
     return render(request, "schulte/my_results.html", {"sessions": sessions})
 
@@ -248,6 +346,7 @@ def _result_page(request, session: TestSession, *, conclude: bool):
         "result": result,
         "conclusion": conclusion,
         "conclude": conclude,
+        "attempt": attempt_number(session),
     })
 
 
@@ -273,9 +372,15 @@ def assign_test(request):
     pilots = User.objects.filter(role=User.Role.PILOT).order_by("full_name", "username")
     form = AssignForm(request.POST or None)
     if request.method == "POST" and pilots.exists() and form.is_valid():
-        session = assign_session(request.user, form.cleaned_data["pilot"], form.cleaned_data["check_type"])
+        session = assign_session(
+            request.user,
+            form.cleaned_data["pilot"],
+            form.cleaned_data["check_type"],
+            form.cleaned_data["table_size"],
+            form.cleaned_data["number_order"],
+        )
         messages.success(
-            request, f"Тестирование назначено (сессия {session.pk}), пилот уведомлён")
+            request, "Тестирование назначено, пилот уведомлён.", extra_tags="keep")
         return redirect("assign_test")
     return render(request, "schulte/assign.html", {"form": form, "has_pilots": pilots.exists()})
 
@@ -292,6 +397,7 @@ def review_pilot(request, pk: int):
     sessions = (
         TestSession.objects.filter(pilot=pilot, status=TestSession.Status.COMPLETED)
         .select_related("result")
+        .order_by("scheduled_at", "id")
     )
     return render(request, "schulte/review_pilot.html", {"pilot": pilot, "sessions": sessions})
 
@@ -301,7 +407,7 @@ def review_session(request, pk: int):
     session = get_object_or_404(
         TestSession.objects.select_related("pilot", "result", "psychologist"), pk=pk)
     if session.status != TestSession.Status.COMPLETED or not hasattr(session, "result"):
-        messages.error(request, "Результат сессии отсутствует")
+        messages.error(request, "Результат попытки отсутствует")
         return redirect("review_pilot", pk=session.pilot_id)
     return _result_page(request, session, conclude=True)
 
@@ -313,7 +419,7 @@ def conclusion(request, pk: int):
         TestSession.objects.select_related("pilot", "result"), pk=pk)
     result = getattr(session, "result", None)
     if result is None:
-        messages.error(request, "Для сессии нет результата тестирования")
+        messages.error(request, "Для попытки нет результата тестирования")
         return redirect("review_pilot", pk=session.pilot_id)
     existing = result.conclusions.select_related("norm").first()
     norm = AdmissionNorm.objects.order_by("-id").first()
@@ -342,6 +448,7 @@ def conclusion(request, pk: int):
         "in_norm": suggestion == Conclusion.Decision.FIT,
         "form": form,
         "existing": existing,
+        "attempt": attempt_number(session),
     })
 
 
@@ -357,14 +464,15 @@ def dynamics_pilot(request, pk: int):
     points = dynamics_points(pilot)
     charts = []
     if len(points) >= 2:
-        for key, title in (("er", "ЭР"), ("vr", "ВР"), ("pu", "ПУ")):
+        for key, title, y_title, digits in (
+            ("er", "ЭР", "Время, с", 2),
+            ("vr", "ВР", "ВР", 3),
+            ("pu", "ПУ", "ПУ", 3),
+        ):
             values = [point[key] for point in points]
-            charts.append({
-                "title": title,
-                "points": chart_polyline(values),
-                "low": min(values),
-                "high": max(values),
-            })
+            chart = chart_series(values, digits=digits)
+            chart.update(title=title, y_title=y_title, x_title="Попытки")
+            charts.append(chart)
     return render(request, "schulte/dynamics.html", {
         "pilot": pilot,
         "points": points,
@@ -418,7 +526,7 @@ def pilot_delete(request, pk: int):
     blocked = pilot.pilot_sessions.exists()
     if request.method == "POST":
         if blocked:
-            messages.error(request, "Нельзя удалить пилота: у него есть сессии тестирования")
+            messages.error(request, "Нельзя удалить пилота: у него есть тестирования")
             return redirect("pilot_list")
         try:
             pilot.delete()

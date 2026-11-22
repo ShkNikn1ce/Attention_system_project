@@ -4,19 +4,19 @@
   <h1>{{ pilot.display_name }}</h1>
   <p class="lede">{{ pilot.employee_number }}{% if pilot.position %} · {{ pilot.position }}{% endif %}</p>
   {% if not sessions %}
-    <p class="banner warn">У пилота нет завершённых сессий.</p>
+    <p class="banner warn">У пилота нет завершённых попыток.</p>
   {% else %}
     <section class="panel">
       <table>
-        <tr><th>Сессия</th><th>Когда</th><th>Тип</th><th>ЭР</th><th>ВР</th><th>ПУ</th></tr>
+        <tr><th>Попытка</th><th>Тип</th><th>ЭР</th><th>ВР</th><th>ПУ</th><th>Дата</th></tr>
         {% for session in sessions %}
           <tr>
-            <td><a href="{% url 'review_session' session.pk %}">{{ session.pk }}</a></td>
-            <td>{{ session.scheduled_at|date:"Y-m-d H:i" }}</td>
+            <td class="num"><a href="{% url 'review_session' session.pk %}">{{ forloop.counter }}</a></td>
             <td>{{ session.get_check_type_display }}</td>
             <td class="num">{{ session.result.er|floatformat:2 }}</td>
             <td class="num">{{ session.result.vr|floatformat:3 }}</td>
             <td class="num">{{ session.result.pu|floatformat:3 }}</td>
+            <td>{{ session.scheduled_at|date:"Y-m-d H:i" }}</td>
           </tr>
         {% endfor %}
       </table>

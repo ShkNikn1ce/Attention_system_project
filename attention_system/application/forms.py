@@ -6,400 +6,400 @@ from datetime import date
 from typing import Optional
 
 from attention_system.application.controllers import (
-    ДанныеПилота, КонтроллерАутентификации, КонтроллерДанныхПилотов, КонтроллерДинамики,
-    КонтроллерЗаключения, КонтроллерНазначения, КонтроллерНорм, КонтроллерОтчётов,
-    КонтроллерРезультатов, КонтроллерРезультатовПилота, КонтроллерТестирования)
-from attention_system.application.screen import Экран
+    PilotData, AuthController, PilotAdminController, DynamicsController,
+    ConclusionController, AssignmentController, NormController, ReportController,
+    ReviewController, OwnResultsController, TestingController)
+from attention_system.application.screen import Screen
 from attention_system.business.entities import (
-    ЗаключениеОДопуске, НормаДопуска, Пилот, РезультатТестирования, СводныйОтчёт, СессияТестирования,
-    ТаблицаШульте)
-from attention_system.business.enums import РасположениеЧисел, РешениеОДопуске, Роль, ТипПроверки
+    Conclusion, AdmissionNorm, Pilot, TestResult, SummaryReport, TestSession,
+    SchulteTable)
+from attention_system.business.enums import NumberOrder, Decision, Role, CheckType
 from attention_system.business.errors import (
-    ОшибкаБлокировки, ОшибкаВхода, ОшибкаДанных, ОшибкаПредметнойОбласти, НетДанных)
-from attention_system.business.services import ГрафикДинамики, ДеталиСессии, ПредварительноеЗаключение
-from attention_system.markup import стереотип
-from attention_system.middleware.clock import Секундомер
-from attention_system.middleware.security import Сеанс
+    LockoutError, LoginError, DataError, DomainError, NotFoundError)
+from attention_system.business.services import DynamicsChart, SessionDetails, SuggestedConclusion
+from attention_system.markup import stereotype
+from attention_system.middleware.clock import Clock
+from attention_system.middleware.security import WorkSession
 
 
-@стереотип("граничный")
-class ФормаВхода:
+@stereotype("граничный")
+class LoginForm:
     """Прецедент 1."""
 
-    def __init__(self, контроллер: КонтроллерАутентификации, экран: Экран) -> None:
-        self._контроллер: КонтроллерАутентификации = контроллер
-        self._экран: Экран = экран
-        self.сеанс: Optional[Сеанс] = None
+    def __init__(self, controller: AuthController, screen: Screen) -> None:
+        self._controller: AuthController = controller
+        self._screen: Screen = screen
+        self.work: Optional[WorkSession] = None
 
-    def открытьСистему(self) -> None:
-        self.вывестиФормуВхода()
+    def open_system(self) -> None:
+        self.show_login()
 
-    def вывестиФормуВхода(self) -> None:
-        self._экран.вывести("Вход в систему: введите логин и пароль")
+    def show_login(self) -> None:
+        self._screen.show("Вход в систему: введите логин и пароль")
 
-    def ввестиЛогинИПароль(self, логин: str, пароль: str) -> bool:
+    def enter_credentials(self, login: str, password: str) -> bool:
         try:
-            self.сеанс = self._контроллер.выполнитьВход(логин, пароль)
-        except ОшибкаБлокировки as ошибка:
-            self.показатьОшибкуВхода(str(ошибка))
+            self.work = self._controller.authenticate(login, password)
+        except LockoutError as error:
+            self.show_login_error(str(error))
             return False
-        except ОшибкаВхода as ошибка:
-            self.показатьОшибкуВхода(str(ошибка))
-            self.предложитьПовторитьВвод()
+        except LoginError as error:
+            self.show_login_error(str(error))
+            self.offer_retry()
             return False
-        self.открытьИнтерфейс(self.сеанс.роль())
+        self.open_home(self.work.role())
         return True
 
-    def показатьОшибкуВхода(self, текст: str) -> None:
-        self._экран.вывести(f"Ошибка входа: {текст}")
+    def show_login_error(self, text: str) -> None:
+        self._screen.show(f"Ошибка входа: {text}")
 
-    def предложитьПовторитьВвод(self) -> None:
-        self._экран.вывести("Повторите ввод логина и пароля")
+    def offer_retry(self) -> None:
+        self._screen.show("Повторите ввод логина и пароля")
 
-    def открытьИнтерфейс(self, роль: Роль) -> None:
-        self._экран.вывести(f"Открыт интерфейс: {роль.названиеРоли()}")
+    def open_home(self, role: Role) -> None:
+        self._screen.show(f"Открыт интерфейс: {role.label()}")
 
 
-@стереотип("граничный")
-class ФормаТестирования:
+@stereotype("граничный")
+class TestingForm:
     """Прецедент 2. Размер и расположение чисел выбирает пилот при подтверждении готовности."""
 
-    def __init__(self, контроллер: КонтроллерТестирования, экран: Экран, секундомер: Секундомер) -> None:
-        self._контроллер: КонтроллерТестирования = контроллер
-        self._экран: Экран = экран
-        self._секундомер: Секундомер = секундомер
-        self._сессия: Optional[СессияТестирования] = None
-        self._таблицы: list[ТаблицаШульте] = []
-        self._текущая: Optional[ТаблицаШульте] = None
-        self._размер: int = 3
-        self._расположение: РасположениеЧисел = РасположениеЧисел.ПО_ПОРЯДКУ
-        self.результат: Optional[РезультатТестирования] = None
+    def __init__(self, controller: TestingController, screen: Screen, clock: Clock) -> None:
+        self._controller: TestingController = controller
+        self._screen: Screen = screen
+        self._clock: Clock = clock
+        self._session: Optional[TestSession] = None
+        self._tables: list[SchulteTable] = []
+        self._current: Optional[SchulteTable] = None
+        self._size: int = 3
+        self._layout: NumberOrder = NumberOrder.ORDERED
+        self.result: Optional[TestResult] = None
 
-    def выбратьТестирование(self) -> bool:
+    def open_testing(self) -> bool:
         try:
-            self._сессия = self._контроллер.запуститьТестирование()
-        except НетДанных as ошибка:
-            self.сообщитьНетСессии(str(ошибка))
+            self._session = self._controller.start_testing()
+        except NotFoundError as error:
+            self.show_no_session(str(error))
             return False
-        self.показатьИнструкцию()
+        self.show_instructions()
         return True
 
-    def показатьИнструкцию(self) -> None:
-        self._экран.вывести("Инструкция: находите числа по возрастанию как можно быстрее; будет пять таблиц")
+    def show_instructions(self) -> None:
+        self._screen.show("Инструкция: находите числа по возрастанию как можно быстрее; будет пять таблиц")
 
-    def сообщитьНетСессии(self, текст: str) -> None:
-        self._экран.вывести(текст)
+    def show_no_session(self, text: str) -> None:
+        self._screen.show(text)
 
-    def подтвердитьГотовность(self, размер: int = 3,
-                              расположение: РасположениеЧисел = РасположениеЧисел.ПО_ПОРЯДКУ) -> None:
-        self._размер, self._расположение = размер, расположение
-        self._таблицы = []
-        self.предъявитьТаблицы()
+    def confirm_ready(self, size: int = 3,
+                              layout: NumberOrder = NumberOrder.ORDERED) -> None:
+        self._size, self._layout = size, layout
+        self._tables = []
+        self.present_tables()
 
-    def предъявитьТаблицы(self) -> None:
-        номер = len(self._таблицы) + 1
-        self._текущая = self._контроллер.создатьТаблицу(self._сессия, номер, self._размер, self._расположение)
-        self.показатьТаблицу(self._текущая)
-        self._секундомер.начать()
+    def present_tables(self) -> None:
+        order = len(self._tables) + 1
+        self._current = self._controller.create_table(self._session, order, self._size, self._layout)
+        self.show_table(self._current)
+        self._clock.start_clock()
 
-    def показатьТаблицу(self, таблица: ТаблицаШульте) -> None:
-        self._экран.вывести(f"Таблица {таблица.номерПоПорядку} из 5: {таблица.числа}")
+    def show_table(self, table: SchulteTable) -> None:
+        self._screen.show(f"Таблица {table.order_no} из 5: {table.numbers}")
 
-    def указатьЧисла(self) -> None:
-        секунды = self._секундомер.остановить()
-        self._контроллер.зафиксироватьВремя(self._текущая, секунды)
-        self._таблицы.append(self._текущая)
-        if len(self._таблицы) < 5:
-            self.предъявитьТаблицы()
+    def enter_numbers(self) -> None:
+        seconds = self._clock.stop()
+        self._controller.record_time(self._current, seconds)
+        self._tables.append(self._current)
+        if len(self._tables) < 5:
+            self.present_tables()
             return
-        self.результат = self._контроллер.завершитьТестирование(self._сессия, self._таблицы)
-        self.сообщитьОЗавершении(self.результат)
+        self.result = self._controller.finish_testing(self._session, self._tables)
+        self.show_finished(self.result)
 
-    def сообщитьОЗавершении(self, результат: РезультатТестирования) -> None:
-        self._экран.вывести(
-            f"Тестирование завершено: ЭР={результат.эр:.2f}, ВР={результат.вр:.3f}, ПУ={результат.пу:.3f}")
+    def show_finished(self, result: TestResult) -> None:
+        self._screen.show(
+            f"Тестирование завершено: ЭР={result.er:.2f}, ВР={result.vr:.3f}, ПУ={result.pu:.3f}")
 
-    def прерватьТестирование(self) -> None:
-        self._контроллер.отменитьТестирование(self._сессия)
-        self.сообщитьОбОтмене()
+    def abort_testing(self) -> None:
+        self._controller.cancel_testing(self._session)
+        self.show_cancelled()
 
-    def сообщитьОбОтмене(self) -> None:
-        self._экран.вывести("Тестирование прервано, результат не сохранён")
+    def show_cancelled(self) -> None:
+        self._screen.show("Тестирование прервано, результат не сохранён")
 
 
-@стереотип("граничный")
-class ФормаМоихРезультатов:
+@stereotype("граничный")
+class OwnResultsForm:
     """Прецедент 3."""
 
-    def __init__(self, контроллер: КонтроллерРезультатовПилота, экран: Экран) -> None:
-        self._контроллер: КонтроллерРезультатовПилота = контроллер
-        self._экран: Экран = экран
+    def __init__(self, controller: OwnResultsController, screen: Screen) -> None:
+        self._controller: OwnResultsController = controller
+        self._screen: Screen = screen
 
-    def открытьМоиРезультаты(self) -> bool:
+    def open_own_results(self) -> bool:
         try:
-            сессии = self._контроллер.найтиЗавершённыеСессии()
-        except НетДанных as ошибка:
-            self.сообщитьНетРезультатов(str(ошибка))
+            sessions = self._controller.completed_sessions()
+        except NotFoundError as error:
+            self.show_no_results(str(error))
             return False
-        self.показатьСписокСессий(сессии)
+        self.show_sessions(sessions)
         return True
 
-    def показатьСписокСессий(self, сессии: list[СессияТестирования]) -> None:
-        for с in сессии:
-            self._экран.вывести(f"Сессия {с.код}: {с.датаВремя:%Y-%m-%d %H:%M}, {с.типПроверки.value}")
+    def show_sessions(self, sessions: list[TestSession]) -> None:
+        for s in sessions:
+            self._screen.show(f"Сессия {s.pk}: {s.occurred_at:%Y-%m-%d %H:%M}, {s.check_type.value}")
 
-    def выбратьСессию(self, кодСессии: int) -> None:
-        результат = self._контроллер.получитьПоказатели(кодСессии)
-        self.показатьПоказатели(результат)
+    def choose_session(self, session_id: int) -> None:
+        result = self._controller.metrics_of(session_id)
+        self.show_metrics(result)
 
-    def показатьПоказатели(self, результат: РезультатТестирования) -> None:
-        self._экран.вывести(f"ЭР={результат.эр:.2f}, ВР={результат.вр:.3f}, ПУ={результат.пу:.3f}")
+    def show_metrics(self, result: TestResult) -> None:
+        self._screen.show(f"ЭР={result.er:.2f}, ВР={result.vr:.3f}, ПУ={result.pu:.3f}")
 
-    def сообщитьНетРезультатов(self, текст: str) -> None:
-        self._экран.вывести(текст)
+    def show_no_results(self, text: str) -> None:
+        self._screen.show(text)
 
 
-@стереотип("граничный")
-class ФормаНазначенияТестирования:
+@stereotype("граничный")
+class AssignmentForm:
     """Прецедент 4."""
 
-    def __init__(self, контроллер: КонтроллерНазначения, экран: Экран) -> None:
-        self._контроллер: КонтроллерНазначения = контроллер
-        self._экран: Экран = экран
-        self._выбранныйПилот: Optional[int] = None
-        self._типПроверки: Optional[ТипПроверки] = None
+    def __init__(self, controller: AssignmentController, screen: Screen) -> None:
+        self._controller: AssignmentController = controller
+        self._screen: Screen = screen
+        self._chosen_pilot: Optional[int] = None
+        self._check_type: Optional[CheckType] = None
 
-    def открытьНазначение(self) -> bool:
+    def open_assignment(self) -> bool:
         try:
-            пилоты = self._контроллер.найтиПилотов()
-        except НетДанных as ошибка:
-            self.сообщитьНетПилота(str(ошибка))
+            pilots = self._controller.all_pilots()
+        except NotFoundError as error:
+            self.show_no_pilot(str(error))
             return False
-        self.показатьСписокПилотов(пилоты)
+        self.show_pilots(pilots)
         return True
 
-    def показатьСписокПилотов(self, пилоты: list[Пилот]) -> None:
-        for п in пилоты:
-            self._экран.вывести(f"Пилот {п.код}: {п.фио}")
+    def show_pilots(self, pilots: list[Pilot]) -> None:
+        for p in pilots:
+            self._screen.show(f"Пилот {p.pk}: {p.full_name}")
 
-    def выбратьПилотаИТипПроверки(self, кодПилота: int, тип: ТипПроверки) -> None:
-        self._выбранныйПилот, self._типПроверки = кодПилота, тип
+    def choose_pilot_and_check(self, pilot_id: int, format_type: CheckType) -> None:
+        self._chosen_pilot, self._check_type = pilot_id, format_type
 
-    def подтвердитьНазначение(self) -> Optional[СессияТестирования]:
+    def confirm_assignment(self) -> Optional[TestSession]:
         try:
-            сессия = self._контроллер.назначитьТестирование(self._выбранныйПилот, self._типПроверки)
-        except НетДанных as ошибка:
-            self.сообщитьНетПилота(str(ошибка))
+            session = self._controller.assign_test(self._chosen_pilot, self._check_type)
+        except NotFoundError as error:
+            self.show_no_pilot(str(error))
             return None
-        self.показатьПодтверждение(сессия)
-        return сессия
+        self.show_saved(session)
+        return session
 
-    def показатьПодтверждение(self, сессия: СессияТестирования) -> None:
-        self._экран.вывести(f"Тестирование назначено (сессия {сессия.код}), пилот уведомлён")
+    def show_saved(self, session: TestSession) -> None:
+        self._screen.show(f"Тестирование назначено (сессия {session.pk}), пилот уведомлён")
 
-    def сообщитьНетПилота(self, текст: str) -> None:
-        self._экран.вывести(текст)
+    def show_no_pilot(self, text: str) -> None:
+        self._screen.show(text)
 
 
-@стереотип("граничный")
-class ФормаРезультатовПилота:
+@stereotype("граничный")
+class ReviewForm:
     """Прецедент 5."""
 
-    def __init__(self, контроллер: КонтроллерРезультатов, экран: Экран) -> None:
-        self._контроллер: КонтроллерРезультатов = контроллер
-        self._экран: Экран = экран
+    def __init__(self, controller: ReviewController, screen: Screen) -> None:
+        self._controller: ReviewController = controller
+        self._screen: Screen = screen
 
-    def выбратьПилота(self, кодПилота: int) -> bool:
+    def choose_pilot(self, pilot_id: int) -> bool:
         try:
-            сессии = self._контроллер.найтиЗавершённыеСессии(кодПилота)
-        except НетДанных as ошибка:
-            self.сообщитьНетРезультатов(str(ошибка))
+            sessions = self._controller.completed_sessions(pilot_id)
+        except NotFoundError as error:
+            self.show_no_results(str(error))
             return False
-        self.показатьСписокСессий(сессии)
+        self.show_sessions(sessions)
         return True
 
-    def показатьСписокСессий(self, сессии: list[СессияТестирования]) -> None:
-        for с in сессии:
-            self._экран.вывести(f"Сессия {с.код}: {с.датаВремя:%Y-%m-%d %H:%M}")
+    def show_sessions(self, sessions: list[TestSession]) -> None:
+        for s in sessions:
+            self._screen.show(f"Сессия {s.pk}: {s.occurred_at:%Y-%m-%d %H:%M}")
 
-    def выбратьСессию(self, кодСессии: int) -> None:
-        self.показатьПоказатели(self._контроллер.получитьДеталиСессии(кодСессии))
+    def choose_session(self, session_id: int) -> None:
+        self.show_metrics(self._controller.session_details(session_id))
 
-    def показатьПоказатели(self, детали: ДеталиСессии) -> None:
-        времена = ", ".join(f"{т.времяСек:.1f}" for т in детали.таблицы)
-        р = детали.результат
-        self._экран.вывести(f"Время таблиц: {времена}; ЭР={р.эр:.2f}, ВР={р.вр:.3f}, ПУ={р.пу:.3f}")
+    def show_metrics(self, details: SessionDetails) -> None:
+        times = ", ".join(f"{t.time_sec:.1f}" for t in details.tables)
+        r = details.result
+        self._screen.show(f"Время таблиц: {times}; ЭР={r.er:.2f}, ВР={r.vr:.3f}, ПУ={r.pu:.3f}")
 
-    def сообщитьНетРезультатов(self, текст: str) -> None:
-        self._экран.вывести(текст)
+    def show_no_results(self, text: str) -> None:
+        self._screen.show(text)
 
 
-@стереотип("граничный")
-class ФормаЗаключения:
+@stereotype("граничный")
+class ConclusionForm:
     """Прецедент 6."""
 
-    def __init__(self, контроллер: КонтроллерЗаключения, экран: Экран) -> None:
-        self._контроллер: КонтроллерЗаключения = контроллер
-        self._экран: Экран = экран
-        self._предварительное: Optional[ПредварительноеЗаключение] = None
+    def __init__(self, controller: ConclusionController, screen: Screen) -> None:
+        self._controller: ConclusionController = controller
+        self._screen: Screen = screen
+        self._draft: Optional[SuggestedConclusion] = None
 
-    def запроситьЗаключение(self, кодСессии: int) -> bool:
+    def request_conclusion(self, session_id: int) -> bool:
         try:
-            self._предварительное = self._контроллер.сформироватьЗаключение(кодСессии)
-        except НетДанных as ошибка:
-            self._экран.вывести(str(ошибка))
+            self._draft = self._controller.suggest_conclusion(session_id)
+        except NotFoundError as error:
+            self._screen.show(str(error))
             return False
-        if self._предварительное.вНорме:
-            self.предложитьЗаключение(self._предварительное)
+        if self._draft.within_norm:
+            self.show_suggestion(self._draft)
         else:
-            self.показатьПредупреждение(self._предварительное)
+            self.show_warning(self._draft)
         return True
 
-    def предложитьЗаключение(self, предварительное: ПредварительноеЗаключение) -> None:
-        self._экран.вывести(f"Предлагается заключение: {предварительное.решение.value}")
+    def show_suggestion(self, draft: SuggestedConclusion) -> None:
+        self._screen.show(f"Предлагается заключение: {draft.decision.value}")
 
-    def показатьПредупреждение(self, предварительное: ПредварительноеЗаключение) -> None:
-        self._экран.вывести(f"Внимание: показатели вне нормы. Предлагается: {предварительное.решение.value}")
+    def show_warning(self, draft: SuggestedConclusion) -> None:
+        self._screen.show(f"Внимание: показатели вне нормы. Предлагается: {draft.decision.value}")
 
-    def подтвердитьЗаключение(self, решение: Optional[РешениеОДопуске] = None,
-                              комментарий: str = "") -> ЗаключениеОДопуске:
-        заключение = self._контроллер.сохранитьЗаключение(self._предварительное, решение, комментарий)
-        self.показатьПодтверждение(заключение)
-        return заключение
+    def confirm_conclusion(self, decision: Optional[Decision] = None,
+                              comment: str = "") -> Conclusion:
+        conclusion = self._controller.save_conclusion(self._draft, decision, comment)
+        self.show_saved(conclusion)
+        return conclusion
 
-    def показатьПодтверждение(self, заключение: ЗаключениеОДопуске) -> None:
-        self._экран.вывести(f"Заключение сохранено и передано в службу безопасности: {заключение.решение.value}")
+    def show_saved(self, conclusion: Conclusion) -> None:
+        self._screen.show(f"Заключение сохранено и передано в службу безопасности: {conclusion.decision.value}")
 
 
-@стереотип("граничный")
-class ФормаДинамики:
+@stereotype("граничный")
+class DynamicsForm:
     """Прецедент 7."""
 
-    def __init__(self, контроллер: КонтроллерДинамики, экран: Экран) -> None:
-        self._контроллер: КонтроллерДинамики = контроллер
-        self._экран: Экран = экран
+    def __init__(self, controller: DynamicsController, screen: Screen) -> None:
+        self._controller: DynamicsController = controller
+        self._screen: Screen = screen
 
-    def выбратьДинамикуПилота(self, кодПилота: int) -> bool:
+    def open_dynamics(self, pilot_id: int) -> bool:
         try:
-            график = self._контроллер.запроситьДинамику(кодПилота)
-        except НетДанных as ошибка:
-            self.сообщитьНетДанных(str(ошибка))
+            chart = self._controller.load_dynamics(pilot_id)
+        except NotFoundError as error:
+            self.show_no_data(str(error))
             return False
-        self.показатьГрафик(график)
+        self.show_chart(chart)
         return True
 
-    def показатьГрафик(self, график: ГрафикДинамики) -> None:
-        self._экран.вывести(график.какТекст())
+    def show_chart(self, chart: DynamicsChart) -> None:
+        self._screen.show(chart.as_text())
 
-    def сообщитьНетДанных(self, текст: str) -> None:
-        self._экран.вывести(текст)
+    def show_no_data(self, text: str) -> None:
+        self._screen.show(text)
 
 
-@стереотип("граничный")
-class ФормаДанныхПилотов:
+@stereotype("граничный")
+class PilotAdminForm:
     """Прецедент 8."""
 
-    def __init__(self, контроллер: КонтроллерДанныхПилотов, экран: Экран) -> None:
-        self._контроллер: КонтроллерДанныхПилотов = контроллер
-        self._экран: Экран = экран
+    def __init__(self, controller: PilotAdminController, screen: Screen) -> None:
+        self._controller: PilotAdminController = controller
+        self._screen: Screen = screen
 
-    def открытьСписокПилотов(self) -> None:
-        self.показатьСписок(self._контроллер.найтиПилотов())
+    def open_pilot_list(self) -> None:
+        self.show_list(self._controller.all_pilots())
 
-    def показатьСписок(self, пилоты: list[Пилот]) -> None:
-        self._экран.вывести("Пилотов в базе: " + str(len(пилоты)))
-        for п in пилоты:
-            self._экран.вывести(f"{п.код}: {п.фио} ({п.табельныйНомер})")
+    def show_list(self, pilots: list[Pilot]) -> None:
+        self._screen.show("Пилотов в базе: " + str(len(pilots)))
+        for p in pilots:
+            self._screen.show(f"{p.pk}: {p.full_name} ({p.employee_number})")
 
-    def ввестиДанныеПилота(self, данные: ДанныеПилота) -> bool:
-        return self._выполнить(lambda: self._контроллер.добавитьПилота(данные), "Пилот добавлен")
+    def enter_pilot(self, payload: PilotData) -> bool:
+        return self._run(lambda: self._controller.add_pilot(payload), "Пилот добавлен")
 
-    def ввестиНовыеДанные(self, кодПилота: int, данные: ДанныеПилота) -> bool:
-        return self._выполнить(lambda: self._контроллер.изменитьДанные(кодПилота, данные), "Данные пилота изменены")
+    def enter_update(self, pilot_id: int, payload: PilotData) -> bool:
+        return self._run(lambda: self._controller.update_pilot(pilot_id, payload), "Данные пилота изменены")
 
-    def удалитьПилота(self, кодПилота: int) -> bool:
-        return self._выполнить(lambda: self._контроллер.удалитьПилота(кодПилота), "Пилот удалён")
+    def delete_pilot(self, pilot_id: int) -> bool:
+        return self._run(lambda: self._controller.delete_pilot(pilot_id), "Пилот удалён")
 
-    def _выполнить(self, действие, подтверждение: str) -> bool:
+    def _run(self, action, confirmation: str) -> bool:
         try:
-            действие()
-        except ОшибкаПредметнойОбласти as ошибка:
-            self.показатьОшибкуВвода(str(ошибка))
-            self.запроситьПовторныйВвод()
+            action()
+        except DomainError as error:
+            self.show_input_error(str(error))
+            self.ask_again()
             return False
-        self.показатьПодтверждение(подтверждение)
+        self.show_saved(confirmation)
         return True
 
-    def показатьОшибкуВвода(self, текст: str) -> None:
-        self._экран.вывести(f"Ошибка: {текст}")
+    def show_input_error(self, text: str) -> None:
+        self._screen.show(f"Ошибка: {text}")
 
-    def запроситьПовторныйВвод(self) -> None:
-        self._экран.вывести("Исправьте данные и повторите ввод")
+    def ask_again(self) -> None:
+        self._screen.show("Исправьте данные и повторите ввод")
 
-    def показатьПодтверждение(self, текст: str) -> None:
-        self._экран.вывести(текст)
+    def show_saved(self, text: str) -> None:
+        self._screen.show(text)
 
 
-@стереотип("граничный")
-class ФормаНормДопуска:
+@stereotype("граничный")
+class NormForm:
     """Прецедент 9."""
 
-    def __init__(self, контроллер: КонтроллерНорм, экран: Экран) -> None:
-        self._контроллер: КонтроллерНорм = контроллер
-        self._экран: Экран = экран
+    def __init__(self, controller: NormController, screen: Screen) -> None:
+        self._controller: NormController = controller
+        self._screen: Screen = screen
 
-    def открытьНормы(self) -> None:
+    def open_norms(self) -> None:
         try:
-            норма = self._контроллер.получитьДействующиеНормы()
-        except НетДанных as ошибка:
-            self._экран.вывести(str(ошибка))
+            norm = self._controller.current_norms()
+        except NotFoundError as error:
+            self._screen.show(str(error))
             return
-        self.показатьНормы(норма)
+        self.show_norms(norm)
 
-    def показатьНормы(self, норма: НормаДопуска) -> None:
-        self._экран.вывести(f"ЭР {норма.эрМин}–{норма.эрМакс}; ВР {норма.врМин}–{норма.врМакс}; "
-                            f"ПУ {норма.пуМин}–{норма.пуМакс}")
+    def show_norms(self, norm: AdmissionNorm) -> None:
+        self._screen.show(f"ЭР {norm.er_min}–{norm.er_max}; ВР {norm.vr_min}–{norm.vr_max}; "
+                            f"ПУ {norm.pu_min}–{norm.pu_max}")
 
-    def изменитьЗначения(self, значения: НормаДопуска) -> bool:
+    def change_values(self, values: AdmissionNorm) -> bool:
         try:
-            self._контроллер.сохранитьНормы(значения)
-        except ОшибкаДанных as ошибка:
-            self.показатьОшибкуДиапазона(str(ошибка))
+            self._controller.save_norms(values)
+        except DataError as error:
+            self.show_range_error(str(error))
             return False
-        self.показатьПодтверждение()
+        self.show_saved()
         return True
 
-    def показатьОшибкуДиапазона(self, текст: str) -> None:
-        self._экран.вывести(f"Ошибка: {текст}")
+    def show_range_error(self, text: str) -> None:
+        self._screen.show(f"Ошибка: {text}")
 
-    def показатьПодтверждение(self) -> None:
-        self._экран.вывести("Нормы допуска сохранены")
+    def show_saved(self) -> None:
+        self._screen.show("Нормы допуска сохранены")
 
 
-@стереотип("граничный")
-class ФормаСводногоОтчёта:
+@stereotype("граничный")
+class ReportForm:
     """Прецедент 10."""
 
-    def __init__(self, контроллер: КонтроллерОтчётов, экран: Экран) -> None:
-        self._контроллер: КонтроллерОтчётов = контроллер
-        self._экран: Экран = экран
+    def __init__(self, controller: ReportController, screen: Screen) -> None:
+        self._controller: ReportController = controller
+        self._screen: Screen = screen
 
-    def открытьСводныйОтчёт(self) -> None:
-        self._экран.вывести("Сводный отчёт: укажите период и группу пилотов")
+    def open_report(self) -> None:
+        self._screen.show("Сводный отчёт: укажите период и группу пилотов")
 
-    def указатьПериодИГруппу(self, начало: date, конец: date, кодыПилотов: list[int]) -> bool:
+    def set_period_and_group(self, start: date, end: date, pilot_ids: list[int]) -> bool:
         try:
-            отчёт = self._контроллер.сформироватьОтчёт(начало, конец, кодыПилотов)
-        except (НетДанных, ОшибкаДанных) as ошибка:
-            self.сообщитьНетДанных(str(ошибка))
+            report = self._controller.build_report(start, end, pilot_ids)
+        except (NotFoundError, DataError) as error:
+            self.show_no_data(str(error))
             return False
-        self.показатьОтчёт(отчёт)
+        self.show_report(report)
         return True
 
-    def показатьОтчёт(self, отчёт: СводныйОтчёт) -> None:
-        self._экран.вывести(f"Сводный отчёт {отчёт.началоПериода}–{отчёт.конецПериода}: пилотов {len(отчёт.строки)}")
-        for с in отчёт.строки:
-            self._экран.вывести(f"{с.фио}: сессий {с.числоСессий}, ЭР={с.срЭР:.2f}, ВР={с.срВР:.3f}, ПУ={с.срПУ:.3f}")
+    def show_report(self, report: SummaryReport) -> None:
+        self._screen.show(f"Сводный отчёт {report.period_start}–{report.period_end}: пилотов {len(report.lines)}")
+        for s in report.lines:
+            self._screen.show(f"{s.full_name}: сессий {s.session_count}, ЭР={s.avg_er:.2f}, ВР={s.avg_vr:.3f}, ПУ={s.avg_pu:.3f}")
 
-    def сообщитьНетДанных(self, текст: str) -> None:
-        self._экран.вывести(текст)
+    def show_no_data(self, text: str) -> None:
+        self._screen.show(text)

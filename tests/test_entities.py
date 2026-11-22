@@ -5,111 +5,111 @@ from datetime import datetime
 
 from tests import helpers  # noqa: F401
 from attention_system.business.entities import (
-    НормаДопуска, Пилот, Пользователь, РезультатТестирования, СессияТестирования, ТаблицаШульте)
-from attention_system.business.enums import РасположениеЧисел, Роль, СтатусСессии, ТипПроверки
-from attention_system.business.errors import ОшибкаДанных, ОшибкаСостояния
-from attention_system.middleware.password import ХэшПароля
+    AdmissionNorm, Pilot, User, TestResult, TestSession, SchulteTable)
+from attention_system.business.enums import NumberOrder, Role, SessionStatus, CheckType
+from attention_system.business.errors import DataError, StateError
+from attention_system.middleware.password import PasswordHash
 
 
-def новаяСессия():
-    return СессияТестирования(кодПилота=1, кодПсихолога=2, датаВремя=datetime.now(), типПроверки=ТипПроверки.ПЛАНОВАЯ)
+def fresh_session():
+    return TestSession(pilot_id=1, psychologist_id=2, occurred_at=datetime.now(), check_type=CheckType.PLANNED)
 
 
-class ТестСессии(unittest.TestCase):
-    def test_начальное_состояние(self):
+class SessionStateTests(unittest.TestCase):
+    def test_initial_state(self):
         """Новая сессия находится в состоянии «назначена»."""
-        self.assertTrue(новаяСессия().назначена())
+        self.assertTrue(fresh_session().is_assigned())
 
-    def test_завершение(self):
+    def test_complete(self):
         """Назначенная сессия может быть завершена."""
-        с = новаяСессия()
-        с.завершить()
-        self.assertEqual(с.статус, СтатусСессии.ЗАВЕРШЕНА)
+        s = fresh_session()
+        s.complete()
+        self.assertEqual(s.status, SessionStatus.COMPLETED)
 
-    def test_отмена(self):
+    def test_cancel(self):
         """Назначенная сессия может быть отменена."""
-        с = новаяСессия()
-        с.отменить()
-        self.assertEqual(с.статус, СтатусСессии.ОТМЕНЕНА)
+        s = fresh_session()
+        s.cancel()
+        self.assertEqual(s.status, SessionStatus.CANCELLED)
 
-    def test_завершённую_нельзя_отменить(self):
+    def test_completed_cannot_be_cancelled(self):
         """Завершённую сессию нельзя отменить."""
-        с = новаяСессия()
-        с.завершить()
-        with self.assertRaises(ОшибкаСостояния):
-            с.отменить()
+        s = fresh_session()
+        s.complete()
+        with self.assertRaises(StateError):
+            s.cancel()
 
-    def test_отменённую_нельзя_завершить(self):
+    def test_cancelled_cannot_be_completed(self):
         """Отменённую сессию нельзя завершить."""
-        с = новаяСессия()
-        с.отменить()
-        with self.assertRaises(ОшибкаСостояния):
-            с.завершить()
+        s = fresh_session()
+        s.cancel()
+        with self.assertRaises(StateError):
+            s.complete()
 
 
-class ТестТаблицыШульте(unittest.TestCase):
-    def таблица(self, размер, расположение):
-        return ТаблицаШульте(кодСессии=1, номерПоПорядку=1, размер=размер, расположениеЧисел=расположение)
+class SchulteTableTests(unittest.TestCase):
+    def table(self, size, layout):
+        return SchulteTable(session_id=1, order_no=1, size=size, number_order=layout)
 
-    def test_по_порядку(self):
+    def test_ordered_numbers(self):
         """Числа «по порядку» идут от 1 до n²."""
-        self.assertEqual(self.таблица(3, РасположениеЧисел.ПО_ПОРЯДКУ).сгенерироватьЧисла(), list(range(1, 10)))
+        self.assertEqual(self.table(3, NumberOrder.ORDERED).generate_numbers(), list(range(1, 10)))
 
-    def test_вперемешку_перестановка(self):
+    def test_shuffled_is_permutation(self):
         """Числа «вперемешку» — перестановка чисел от 1 до n², отличная от упорядоченной."""
-        числа = self.таблица(4, РасположениеЧисел.ВПЕРЕМЕШКУ).сгенерироватьЧисла(random.Random(3))
-        self.assertEqual(sorted(числа), list(range(1, 17)))
-        self.assertNotEqual(числа, list(range(1, 17)))
+        numbers = self.table(4, NumberOrder.SHUFFLED).generate_numbers(random.Random(3))
+        self.assertEqual(sorted(numbers), list(range(1, 17)))
+        self.assertNotEqual(numbers, list(range(1, 17)))
 
-    def test_слишком_малый_размер(self):
+    def test_size_too_small(self):
         """Таблица размером меньше 2×2 не создаётся."""
-        with self.assertRaises(ОшибкаДанных):
-            self.таблица(1, РасположениеЧисел.ПО_ПОРЯДКУ).сгенерироватьЧисла()
+        with self.assertRaises(DataError):
+            self.table(1, NumberOrder.ORDERED).generate_numbers()
 
-    def test_время_положительное(self):
+    def test_time_must_be_positive(self):
         """Время прохождения должно быть положительным."""
-        т = self.таблица(3, РасположениеЧисел.ПО_ПОРЯДКУ)
-        with self.assertRaises(ОшибкаДанных):
-            т.зафиксироватьВремя(0)
-        т.зафиксироватьВремя(4.5)
-        self.assertEqual(т.времяСек, 4.5)
+        t = self.table(3, NumberOrder.ORDERED)
+        with self.assertRaises(DataError):
+            t.record_time(0)
+        t.record_time(4.5)
+        self.assertEqual(t.time_sec, 4.5)
 
 
-class ТестНормыИПользователя(unittest.TestCase):
-    def test_диапазоны_корректны(self):
+class NormAndUserTests(unittest.TestCase):
+    def test_ranges_are_valid(self):
         """Норма с нижней границей выше верхней отклоняется."""
-        н = НормаДопуска(эрМин=10, эрМакс=5, врМин=0.8, врМакс=1.1, пуМин=0.8, пуМакс=1.1)
-        with self.assertRaises(ОшибкаДанных):
-            н.проверитьДиапазоны()
+        n = AdmissionNorm(er_min=10, er_max=5, vr_min=0.8, vr_max=1.1, pu_min=0.8, pu_max=1.1)
+        with self.assertRaises(DataError):
+            n.check_ranges()
 
-    def test_корректная_норма(self):
+    def test_valid_norm(self):
         """Норма с корректными диапазонами проходит проверку."""
-        НормаДопуска(эрМин=3, эрМакс=25, врМин=0.8, врМакс=1.1, пуМин=0.8, пуМакс=1.1).проверитьДиапазоны()
+        AdmissionNorm(er_min=3, er_max=25, vr_min=0.8, vr_max=1.1, pu_min=0.8, pu_max=1.1).check_ranges()
 
-    def test_пароль_хранится_в_виде_хэша(self):
+    def test_password_is_hashed(self):
         """Пароль не хранится открыто и проверяется по хэшу."""
-        хэш = ХэшПароля.создать("секрет1")
-        self.assertNotIn("секрет1", хэш)
-        п = Пользователь(логин="u", хэшПароля=хэш, роль=Роль.ПИЛОТ)
-        self.assertTrue(п.проверитьПароль("секрет1"))
-        self.assertFalse(п.проверитьПароль("другой"))
+        digest = PasswordHash.make("секрет1")
+        self.assertNotIn("секрет1", digest)
+        p = User(login="u", password_hash=digest, role=Role.PILOT)
+        self.assertTrue(p.check_password("секрет1"))
+        self.assertFalse(p.check_password("другой"))
 
-    def test_соль_разная(self):
+    def test_salt_differs(self):
         """Один и тот же пароль даёт разные хэши (разная соль)."""
-        self.assertNotEqual(ХэшПароля.создать("abc"), ХэшПароля.создать("abc"))
+        self.assertNotEqual(PasswordHash.make("abc"), PasswordHash.make("abc"))
 
-    def test_подкласс_пилот(self):
+    def test_pilot_subclass(self):
         """Пилот является пользователем с ролью «пилот»."""
-        п = Пилот(логин="p", хэшПароля="x", фио="Ф", табельныйНомер="1")
-        self.assertIsInstance(п, Пользователь)
-        self.assertEqual(п.определитьРоль(), Роль.ПИЛОТ)
+        p = Pilot(login="p", password_hash="x", full_name="Ф", employee_number="1")
+        self.assertIsInstance(p, User)
+        self.assertEqual(p.resolve_role(), Role.PILOT)
 
-    def test_результат_считает_показатели(self):
+    def test_result_calculates_metrics(self):
         """Результат рассчитывает ЭР, ВР, ПУ по пяти временам."""
-        р = РезультатТестирования(кодСессии=1)
-        р.рассчитатьПоказатели([20, 18, 19, 22, 21])
-        self.assertAlmostEqual(р.эр, 20.0)
-        self.assertAlmostEqual(р.пу, 1.1)
+        r = TestResult(session_id=1)
+        r.calculate_metrics([20, 18, 19, 22, 21])
+        self.assertAlmostEqual(r.er, 20.0)
+        self.assertAlmostEqual(r.pu, 1.1)
 
 
 if __name__ == "__main__":

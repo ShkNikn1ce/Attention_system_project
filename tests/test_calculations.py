@@ -3,92 +3,92 @@ import unittest
 from datetime import date, datetime
 
 from tests import helpers  # noqa: F401  (ускоренное хэширование)
-from attention_system.business.calculations import РасчётПоказателей
-from attention_system.business.entities import НормаДопуска, Пилот, РезультатТестирования, СессияТестирования
-from attention_system.business.enums import РешениеОДопуске, ТипПроверки
-from attention_system.business.errors import ОшибкаДанных
-from attention_system.business.services import АнализДинамики, ОценкаДопуска, СервисОтчётов
+from attention_system.business.calculations import SchulteMath
+from attention_system.business.entities import AdmissionNorm, Pilot, TestResult, TestSession
+from attention_system.business.enums import Decision, CheckType
+from attention_system.business.errors import DataError
+from attention_system.business.services import DynamicsAnalysis, Admission, ReportService
 
 
-class ТестФормулШульте(unittest.TestCase):
-    def проверить(self, времена, эр, вр, пу):
-        э, в, п = РасчётПоказателей.рассчитать(времена)
-        self.assertAlmostEqual(э, эр, places=4)
-        self.assertAlmostEqual(в, вр, places=4)
-        self.assertAlmostEqual(п, пу, places=4)
+class SchulteFormulaTests(unittest.TestCase):
+    def verify(self, times, er, vr, pu):
+        e, v, p = SchulteMath.calculate(times)
+        self.assertAlmostEqual(e, er, places=4)
+        self.assertAlmostEqual(v, vr, places=4)
+        self.assertAlmostEqual(p, pu, places=4)
 
-    def test_таблицы_3x3_вперемешку(self):
+    def test_tables_3x3_shuffled(self):
         """Расчёт по данным 3×3 вперемешку: 8, 9, 8, 7, 9 с."""
-        self.проверить([8, 9, 8, 7, 9], 8.2, 8 / 8.2, 7 / 8.2)
+        self.verify([8, 9, 8, 7, 9], 8.2, 8 / 8.2, 7 / 8.2)
 
-    def test_таблицы_3x3_по_порядку(self):
+    def test_tables_3x3_ordered(self):
         """Расчёт по данным 3×3 по порядку: 4, 3, 4, 4, 4 с."""
-        self.проверить([4, 3, 4, 4, 4], 3.8, 4 / 3.8, 4 / 3.8)
+        self.verify([4, 3, 4, 4, 4], 3.8, 4 / 3.8, 4 / 3.8)
 
-    def test_таблицы_4x4_по_порядку(self):
+    def test_tables_4x4_ordered(self):
         """Расчёт по данным 4×4 по порядку: 10, 10, 11, 10, 10 с."""
-        self.проверить([10, 10, 11, 10, 10], 10.2, 10 / 10.2, 10 / 10.2)
+        self.verify([10, 10, 11, 10, 10], 10.2, 10 / 10.2, 10 / 10.2)
 
-    def test_таблицы_4x4_вперемешку(self):
+    def test_tables_4x4_shuffled(self):
         """Расчёт по данным 4×4 вперемешку: 20, 18, 19, 22, 21 с."""
-        self.проверить([20, 18, 19, 22, 21], 20.0, 1.0, 1.1)
+        self.verify([20, 18, 19, 22, 21], 20.0, 1.0, 1.1)
 
-    def test_не_пять_таблиц(self):
+    def test_not_five_tables(self):
         """Расчёт отклоняется, если таблиц не пять."""
-        with self.assertRaises(ОшибкаДанных):
-            РасчётПоказателей.рассчитать([1, 2, 3, 4])
+        with self.assertRaises(DataError):
+            SchulteMath.calculate([1, 2, 3, 4])
 
-    def test_неположительное_время(self):
+    def test_non_positive_time(self):
         """Расчёт отклоняется при нулевом или отрицательном времени."""
-        with self.assertRaises(ОшибкаДанных):
-            РасчётПоказателей.рассчитать([5, 5, 0, 5, 5])
-        with self.assertRaises(ОшибкаДанных):
-            РасчётПоказателей.рассчитать([5, 5, -1, 5, 5])
+        with self.assertRaises(DataError):
+            SchulteMath.calculate([5, 5, 0, 5, 5])
+        with self.assertRaises(DataError):
+            SchulteMath.calculate([5, 5, -1, 5, 5])
 
 
-class ТестОценкиДопуска(unittest.TestCase):
-    норма = НормаДопуска(эрМин=3, эрМакс=25, врМин=0.8, врМакс=1.1, пуМин=0.8, пуМакс=1.1)
+class AdmissionTests(unittest.TestCase):
+    norm = AdmissionNorm(er_min=3, er_max=25, vr_min=0.8, vr_max=1.1, pu_min=0.8, pu_max=1.1)
 
-    def test_в_норме(self):
+    def test_within_norm(self):
         """Все показатели в пределах нормы — решение «годен»."""
-        р = РезультатТестирования(кодСессии=1, эр=10, вр=1.0, пу=1.0)
-        self.assertEqual(ОценкаДопуска.оценить(р, self.норма), РешениеОДопуске.ГОДЕН)
+        r = TestResult(session_id=1, er=10, vr=1.0, pu=1.0)
+        self.assertEqual(Admission.suggest(r, self.norm), Decision.FIT)
 
-    def test_пу_вне_нормы(self):
+    def test_pu_outside_norm(self):
         """ПУ выше верхней границы — направление на дополнительное обследование."""
-        р = РезультатТестирования(кодСессии=1, эр=10, вр=1.0, пу=1.2)
-        self.assertEqual(ОценкаДопуска.оценить(р, self.норма), РешениеОДопуске.ДОП_ОБСЛЕДОВАНИЕ)
+        r = TestResult(session_id=1, er=10, vr=1.0, pu=1.2)
+        self.assertEqual(Admission.suggest(r, self.norm), Decision.EXTRA_EXAM)
 
-    def test_границы_включаются(self):
+    def test_bounds_are_inclusive(self):
         """Значения на границах диапазонов считаются нормой."""
-        р = РезультатТестирования(кодСессии=1, эр=25, вр=0.8, пу=1.1)
-        self.assertTrue(self.норма.проверитьПоказатели(р))
+        r = TestResult(session_id=1, er=25, vr=0.8, pu=1.1)
+        self.assertTrue(self.norm.matches(r))
 
 
-class ТестДинамикиИОтчётов(unittest.TestCase):
-    def test_график_упорядочен_по_дате(self):
+class DynamicsAndReportTests(unittest.TestCase):
+    def test_chart_ordered_by_date(self):
         """Точки графика динамики упорядочены по дате сессии."""
-        с1 = СессияТестирования(кодПилота=1, кодПсихолога=2, датаВремя=datetime(2026, 5, 2), типПроверки=ТипПроверки.ПЛАНОВАЯ)
-        с2 = СессияТестирования(кодПилота=1, кодПсихолога=2, датаВремя=datetime(2026, 5, 1), типПроверки=ТипПроверки.ПЛАНОВАЯ)
-        график = АнализДинамики.построить([(с1, РезультатТестирования(кодСессии=1, эр=9)),
-                                           (с2, РезультатТестирования(кодСессии=2, эр=8))])
-        self.assertEqual([т.эр for т in график.точки], [8, 9])
-        self.assertIn("ЭР", график.какТекст())
+        s1 = TestSession(pilot_id=1, psychologist_id=2, occurred_at=datetime(2026, 5, 2), check_type=CheckType.PLANNED)
+        s2 = TestSession(pilot_id=1, psychologist_id=2, occurred_at=datetime(2026, 5, 1), check_type=CheckType.PLANNED)
+        chart = DynamicsAnalysis.build([(s1, TestResult(session_id=1, er=9)),
+                                           (s2, TestResult(session_id=2, er=8))])
+        self.assertEqual([t.er for t in chart.points], [8, 9])
+        self.assertIn("ЭР", chart.as_text())
 
-    def test_агрегация_средних(self):
+    def test_averages(self):
         """Отчёт считает средние ЭР, ВР, ПУ по каждому пилоту."""
-        пилот = Пилот(логин="a", хэшПароля="x", фио="Иванов", табельныйНомер="1", код=5)
-        с = СессияТестирования(кодПилота=5, кодПсихолога=2, датаВремя=datetime(2026, 5, 1), типПроверки=ТипПроверки.ПЛАНОВАЯ)
-        данные = [(с, РезультатТестирования(кодСессии=1, эр=10, вр=1.0, пу=1.0)),
-                  (с, РезультатТестирования(кодСессии=2, эр=20, вр=0.8, пу=1.2))]
-        отчёт = СервисОтчётов.агрегировать([пилот], данные, 1, date(2026, 5, 1), date(2026, 5, 31))
-        self.assertEqual(len(отчёт.строки), 1)
-        строка = отчёт.строки[0]
-        self.assertEqual(строка.числоСессий, 2)
-        self.assertAlmostEqual(строка.срЭР, 15)
-        self.assertAlmostEqual(строка.срВР, 0.9)
-        self.assertAlmostEqual(строка.срПУ, 1.1)
-        self.assertEqual(отчёт.кодыПилотов(), [5])
+        pilot = Pilot(login="a", password_hash="x", full_name="Иванов", employee_number="1", pk=5)
+        s = TestSession(pilot_id=5, psychologist_id=2, occurred_at=datetime(2026, 5, 1), check_type=CheckType.PLANNED)
+        payload = [(s, TestResult(session_id=1, er=10, vr=1.0, pu=1.0)),
+                  (s, TestResult(session_id=2, er=20, vr=0.8, pu=1.2))]
+        report = ReportService.aggregate([pilot], payload, 1, date(2026, 5, 1), date(2026, 5, 31))
+        self.assertEqual(len(report.lines), 1)
+        row = report.lines[0]
+        self.assertEqual(row.session_count, 2)
+        self.assertAlmostEqual(row.avg_er, 15)
+        self.assertAlmostEqual(row.avg_vr, 0.9)
+        self.assertAlmostEqual(row.avg_pu, 1.1)
+        self.assertEqual(report.pilot_ids(), [5])
 
 
 if __name__ == "__main__":

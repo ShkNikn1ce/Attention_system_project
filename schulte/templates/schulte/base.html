@@ -5,16 +5,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Система внимания{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'schulte/app.css' %}">
+  <link rel="stylesheet" href="{% static 'schulte/app.css' %}?v={{ css_version }}">
+  {% block extra_head %}{% endblock %}
 </head>
-<body class="{% if user.is_authenticated %}app{% else %}auth{% endif %}">
+<body class="{% block body_class %}{% if user.is_authenticated %}app{% else %}auth{% endif %}{% endblock %}">
+  {% block chrome %}
   {% if user.is_authenticated %}
     <aside class="side">
       <div class="brand">
-        <span class="brand-mark">Ш</span>
+        <span class="brand-mark">V5</span>
         <div>
-          <strong>Внимание</strong>
-          <small>методика Шульте</small>
+          {% if user.role == 'pilot' or user.role == 'psychologist' %}
+            <strong class="brand-name">{{ user.short_name }}</strong>
+            <small>{{ user.position|default:user.get_role_display }}</small>
+          {% else %}
+            <strong class="brand-name">Админ</strong>
+          {% endif %}
         </div>
       </div>
       <nav>
@@ -37,10 +43,6 @@
         {% endif %}
       </nav>
       <div class="side-user">
-        <div>
-          <strong>{{ user.display_name }}</strong><br>
-          <small>{{ user.get_role_display }}</small>
-        </div>
         <form method="post" action="{% url 'logout' %}">
           {% csrf_token %}
           <button type="submit">Выйти</button>
@@ -48,14 +50,22 @@
       </div>
     </aside>
   {% endif %}
+  {% endblock %}
   <main>
+    {% block notices %}
     {% if messages %}
       <ul class="messages">
         {% for message in messages %}
-          <li class="banner {{ message.tags }}">{{ message }}</li>
+          {% if user.role == 'pilot' and 'success' in message.tags %}
+          {% elif user.role == 'admin' and 'success' in message.tags %}
+          {% elif user.role == 'psychologist' and 'success' in message.tags and 'keep' not in message.tags %}
+          {% else %}
+            <li class="banner {{ message.tags }}">{{ message }}</li>
+          {% endif %}
         {% endfor %}
       </ul>
     {% endif %}
+    {% endblock %}
     {% block content %}{% endblock %}
   </main>
 </body>

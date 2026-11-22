@@ -8,315 +8,315 @@ from datetime import date, datetime
 from typing import Optional
 
 from attention_system.business.entities import (
-    ЗаключениеОДопуске, НормаДопуска, Пилот, РезультатТестирования, СводныйОтчёт, СессияТестирования,
-    ТаблицаШульте)
+    Conclusion, AdmissionNorm, Pilot, TestResult, SummaryReport, TestSession,
+    SchulteTable)
 from attention_system.business.enums import (
-    РасположениеЧисел, РешениеОДопуске, Роль, СтатусСессии, ТипПроверки)
+    NumberOrder, Decision, Role, SessionStatus, CheckType)
 from attention_system.business.errors import (
-    ОшибкаБлокировки, ОшибкаВхода, ОшибкаДанных, ОшибкаДоступа, ОшибкаСостояния, НетДанных)
-from attention_system.business.calculations import РасчётПоказателей
+    LockoutError, LoginError, DataError, AccessError, StateError, NotFoundError)
+from attention_system.business.calculations import SchulteMath
 from attention_system.business.services import (
-    АнализДинамики, ГрафикДинамики, ДеталиСессии, ОценкаДопуска, ПредварительноеЗаключение, СервисОтчётов)
-from attention_system.markup import стереотип
-from attention_system.middleware.external import IИнтерфейсСлужбыБезопасности, IИнтерфейсУведомлений
-from attention_system.middleware.password import ХэшПароля
-from attention_system.middleware.security import КонтрольДоступа, Сеанс
-from attention_system.middleware.storage import IХранилище
+    DynamicsAnalysis, DynamicsChart, SessionDetails, Admission, SuggestedConclusion, ReportService)
+from attention_system.markup import stereotype
+from attention_system.middleware.external import SafetyService, Notifier
+from attention_system.middleware.password import PasswordHash
+from attention_system.middleware.security import Access, WorkSession
+from attention_system.middleware.storage import Storage
 
 
-@стереотип("управляющий")
-class КонтроллерАутентификации:
+@stereotype("управляющий")
+class AuthController:
     """Прецедент 1. Войти в систему."""
 
-    def __init__(self, хранилище: IХранилище, максПопыток: int = 3) -> None:
-        self._хранилище: IХранилище = хранилище
-        self._максПопыток: int = максПопыток
-        self._попытки: dict[str, int] = {}
-        self._замок: threading.Lock = threading.Lock()
+    def __init__(self, storage: Storage, max_attempts: int = 3) -> None:
+        self._storage: Storage = storage
+        self._max_attempts: int = max_attempts
+        self._attempts: dict[str, int] = {}
+        self._lock: threading.Lock = threading.Lock()
 
-    def выполнитьВход(self, логин: str, пароль: str) -> Сеанс:
-        with self._замок:
-            if self._попытки.get(логин, 0) >= self._максПопыток:
-                raise ОшибкаБлокировки("Превышено число попыток входа")
-        пользователь = self._хранилище.найтиПользователяПоЛогину(логин)
-        if пользователь is None or not пользователь.проверитьПароль(пароль):
-            with self._замок:
-                self._попытки[логин] = self._попытки.get(логин, 0) + 1
-            raise ОшибкаВхода("Неверный логин или пароль")
-        with self._замок:
-            self._попытки.pop(логин, None)
-        момент = datetime.now()
-        пользователь.отметитьВход(момент)
-        self._хранилище.отметитьВход(пользователь.код, момент)
-        return Сеанс(пользователь, момент)
+    def authenticate(self, login: str, password: str) -> WorkSession:
+        with self._lock:
+            if self._attempts.get(login, 0) >= self._max_attempts:
+                raise LockoutError("Превышено число попыток входа")
+        user = self._storage.user_by_login(login)
+        if user is None or not user.check_password(password):
+            with self._lock:
+                self._attempts[login] = self._attempts.get(login, 0) + 1
+            raise LoginError("Неверный логин или пароль")
+        with self._lock:
+            self._attempts.pop(login, None)
+        moment = datetime.now()
+        user.mark_login(moment)
+        self._storage.mark_login(user.pk, moment)
+        return WorkSession(user, moment)
 
 
-@стереотип("управляющий")
-class КонтроллерТестирования:
+@stereotype("управляющий")
+class TestingController:
     """Прецедент 2. Пройти тестирование по методике Шульте."""
 
-    def __init__(self, хранилище: IХранилище, сеанс: Сеанс,
-                 генератор: Optional[random.Random] = None) -> None:
-        КонтрольДоступа.требоватьРоль(сеанс, Роль.ПИЛОТ)
-        self._хранилище: IХранилище = хранилище
-        self._сеанс: Сеанс = сеанс
-        self._генератор: Optional[random.Random] = генератор
+    def __init__(self, storage: Storage, work: WorkSession,
+                 rng: Optional[random.Random] = None) -> None:
+        Access.require(work, Role.PILOT)
+        self._storage: Storage = storage
+        self._session_user: WorkSession = work
+        self._rng: Optional[random.Random] = rng
 
-    def запуститьТестирование(self) -> СессияТестирования:
-        сессия = self._хранилище.найтиНазначеннуюСессию(self._сеанс.пользователь.код)
-        if сессия is None:
-            raise НетДанных("Для вас не назначено тестирование")
-        return сессия
+    def start_testing(self) -> TestSession:
+        session = self._storage.assigned_session(self._session_user.user.pk)
+        if session is None:
+            raise NotFoundError("Для вас не назначено тестирование")
+        return session
 
-    def создатьТаблицу(self, сессия: СессияТестирования, номер: int, размер: int = 3,
-                       расположение: РасположениеЧисел = РасположениеЧисел.ПО_ПОРЯДКУ) -> ТаблицаШульте:
-        таблица = ТаблицаШульте(кодСессии=сессия.код, номерПоПорядку=номер, размер=размер,
-                                расположениеЧисел=расположение)
-        таблица.сгенерироватьЧисла(self._генератор)
-        return таблица
+    def create_table(self, session: TestSession, order: int, size: int = 3,
+                       layout: NumberOrder = NumberOrder.ORDERED) -> SchulteTable:
+        table = SchulteTable(session_id=session.pk, order_no=order, size=size,
+                                number_order=layout)
+        table.generate_numbers(self._rng)
+        return table
 
-    def зафиксироватьВремя(self, таблица: ТаблицаШульте, секунды: float) -> None:
-        таблица.зафиксироватьВремя(секунды)
-        self._хранилище.создатьТаблицу(таблица)
+    def record_time(self, table: SchulteTable, seconds: float) -> None:
+        table.record_time(seconds)
+        self._storage.create_table(table)
 
-    def завершитьТестирование(self, сессия: СессияТестирования,
-                              таблицы: list[ТаблицаШульте]) -> РезультатТестирования:
-        результат = РезультатТестирования(кодСессии=сессия.код)
-        результат.рассчитатьПоказатели([т.времяСек for т in таблицы])
-        сессия.завершить()
-        self._хранилище.сохранитьРезультатСессии(сессия, результат)
-        return результат
+    def finish_testing(self, session: TestSession,
+                              tables: list[SchulteTable]) -> TestResult:
+        result = TestResult(session_id=session.pk)
+        result.calculate_metrics([t.time_sec for t in tables])
+        session.complete()
+        self._storage.save_result(session, result)
+        return result
 
-    def отменитьТестирование(self, сессия: СессияТестирования) -> None:
-        сессия.отменить()
-        self._хранилище.обновитьСессию(сессия)
-        self._хранилище.удалитьТаблицыСессии(сессия.код)
+    def cancel_testing(self, session: TestSession) -> None:
+        session.cancel()
+        self._storage.save_session(session)
+        self._storage.delete_tables(session.pk)
 
 
-@стереотип("управляющий")
-class КонтроллерРезультатовПилота:
+@stereotype("управляющий")
+class OwnResultsController:
     """Прецедент 3. Просмотреть свои результаты."""
 
-    def __init__(self, хранилище: IХранилище, сеанс: Сеанс) -> None:
-        КонтрольДоступа.требоватьРоль(сеанс, Роль.ПИЛОТ)
-        self._хранилище: IХранилище = хранилище
-        self._сеанс: Сеанс = сеанс
+    def __init__(self, storage: Storage, work: WorkSession) -> None:
+        Access.require(work, Role.PILOT)
+        self._storage: Storage = storage
+        self._session_user: WorkSession = work
 
-    def найтиЗавершённыеСессии(self) -> list[СессияТестирования]:
-        сессии = self._хранилище.найтиСессииПилота(self._сеанс.пользователь.код, СтатусСессии.ЗАВЕРШЕНА)
-        if not сессии:
-            raise НетДанных("Сохранённых результатов нет")
-        return сессии
+    def completed_sessions(self) -> list[TestSession]:
+        sessions = self._storage.sessions_of(self._session_user.user.pk, SessionStatus.COMPLETED)
+        if not sessions:
+            raise NotFoundError("Сохранённых результатов нет")
+        return sessions
 
-    def получитьПоказатели(self, кодСессии: int) -> РезультатТестирования:
-        сессия = self._хранилище.найтиСессию(кодСессии)
-        if сессия is None or сессия.кодПилота != self._сеанс.пользователь.код:
-            raise ОшибкаДоступа("Можно просматривать только свои результаты")
-        результат = self._хранилище.найтиРезультатСессии(кодСессии)
-        if результат is None:
-            raise НетДанных("Результат сессии отсутствует")
-        return результат
+    def metrics_of(self, session_id: int) -> TestResult:
+        session = self._storage.session_by_id(session_id)
+        if session is None or session.pilot_id != self._session_user.user.pk:
+            raise AccessError("Можно просматривать только свои результаты")
+        result = self._storage.result_of(session_id)
+        if result is None:
+            raise NotFoundError("Результат сессии отсутствует")
+        return result
 
 
-@стереотип("управляющий")
-class КонтроллерНазначения:
+@stereotype("управляющий")
+class AssignmentController:
     """Прецедент 4. Назначить тестирование пилоту."""
 
-    def __init__(self, хранилище: IХранилище, сеанс: Сеанс, уведомления: IИнтерфейсУведомлений) -> None:
-        КонтрольДоступа.требоватьРоль(сеанс, Роль.ПСИХОЛОГ)
-        self._хранилище: IХранилище = хранилище
-        self._сеанс: Сеанс = сеанс
-        self._уведомления: IИнтерфейсУведомлений = уведомления
+    def __init__(self, storage: Storage, work: WorkSession, notifier: Notifier) -> None:
+        Access.require(work, Role.PSYCHOLOGIST)
+        self._storage: Storage = storage
+        self._session_user: WorkSession = work
+        self._notifier: Notifier = notifier
 
-    def найтиПилотов(self) -> list[Пилот]:
-        пилоты = self._хранилище.найтиПилотов()
-        if not пилоты:
-            raise НетДанных("Пилоты в базе не найдены")
-        return пилоты
+    def all_pilots(self) -> list[Pilot]:
+        pilots = self._storage.all_pilots()
+        if not pilots:
+            raise NotFoundError("Пилоты в базе не найдены")
+        return pilots
 
-    def назначитьТестирование(self, кодПилота: int, тип: ТипПроверки,
-                              момент: Optional[datetime] = None) -> СессияТестирования:
-        пилот = self._хранилище.найтиПилота(кодПилота)
-        if пилот is None:
-            raise НетДанных("Пилот не найден в базе")
-        сессия = СессияТестирования(кодПилота=пилот.код, кодПсихолога=self._сеанс.пользователь.код,
-                                    датаВремя=момент or datetime.now(), типПроверки=тип)
-        self._хранилище.создатьСессию(сессия)
-        self._уведомления.отправитьУведомление(пилот, сессия)
-        return сессия
+    def assign_test(self, pilot_id: int, format_type: CheckType,
+                              moment: Optional[datetime] = None) -> TestSession:
+        pilot = self._storage.pilot_by_id(pilot_id)
+        if pilot is None:
+            raise NotFoundError("Пилот не найден в базе")
+        session = TestSession(pilot_id=pilot.pk, psychologist_id=self._session_user.user.pk,
+                                    occurred_at=moment or datetime.now(), check_type=format_type)
+        self._storage.create_session(session)
+        self._notifier.notify(pilot, session)
+        return session
 
 
-@стереотип("управляющий")
-class КонтроллерРезультатов:
+@stereotype("управляющий")
+class ReviewController:
     """Прецедент 5. Просмотреть результаты тестирования."""
 
-    def __init__(self, хранилище: IХранилище, сеанс: Сеанс) -> None:
-        КонтрольДоступа.требоватьРоль(сеанс, Роль.ПСИХОЛОГ)
-        self._хранилище: IХранилище = хранилище
+    def __init__(self, storage: Storage, work: WorkSession) -> None:
+        Access.require(work, Role.PSYCHOLOGIST)
+        self._storage: Storage = storage
 
-    def найтиЗавершённыеСессии(self, кодПилота: int) -> list[СессияТестирования]:
-        сессии = self._хранилище.найтиСессииПилота(кодПилота, СтатусСессии.ЗАВЕРШЕНА)
-        if not сессии:
-            raise НетДанных("У пилота нет завершённых сессий")
-        return сессии
+    def completed_sessions(self, pilot_id: int) -> list[TestSession]:
+        sessions = self._storage.sessions_of(pilot_id, SessionStatus.COMPLETED)
+        if not sessions:
+            raise NotFoundError("У пилота нет завершённых сессий")
+        return sessions
 
-    def получитьДеталиСессии(self, кодСессии: int) -> ДеталиСессии:
-        сессия = self._хранилище.найтиСессию(кодСессии)
-        результат = self._хранилище.найтиРезультатСессии(кодСессии)
-        if сессия is None or результат is None:
-            raise НетДанных("Результат сессии отсутствует")
-        таблицы = self._хранилище.найтиТаблицыСессии(кодСессии)
-        return ДеталиСессии(сессия=сессия, таблицы=таблицы, результат=результат)
+    def session_details(self, session_id: int) -> SessionDetails:
+        session = self._storage.session_by_id(session_id)
+        result = self._storage.result_of(session_id)
+        if session is None or result is None:
+            raise NotFoundError("Результат сессии отсутствует")
+        tables = self._storage.tables_of(session_id)
+        return SessionDetails(session=session, tables=tables, result=result)
 
 
-@стереотип("управляющий")
-class КонтроллерЗаключения:
+@stereotype("управляющий")
+class ConclusionController:
     """Прецедент 6. Сформировать заключение о допуске."""
 
-    def __init__(self, хранилище: IХранилище, сеанс: Сеанс, служба: IИнтерфейсСлужбыБезопасности) -> None:
-        КонтрольДоступа.требоватьРоль(сеанс, Роль.ПСИХОЛОГ)
-        self._хранилище: IХранилище = хранилище
-        self._сеанс: Сеанс = сеанс
-        self._служба: IИнтерфейсСлужбыБезопасности = служба
+    def __init__(self, storage: Storage, work: WorkSession, safety: SafetyService) -> None:
+        Access.require(work, Role.PSYCHOLOGIST)
+        self._storage: Storage = storage
+        self._session_user: WorkSession = work
+        self._safety: SafetyService = safety
 
-    def сформироватьЗаключение(self, кодСессии: int) -> ПредварительноеЗаключение:
-        результат = self._хранилище.найтиРезультатСессии(кодСессии)
-        if результат is None:
-            raise НетДанных("Для сессии нет результата тестирования")
-        норма = self._хранилище.найтиДействующуюНорму()
-        if норма is None:
-            raise НетДанных("Нормы допуска не заданы")
-        решение = ОценкаДопуска.оценить(результат, норма)
-        return ПредварительноеЗаключение(результат=результат, норма=норма, решение=решение,
-                                         вНорме=решение == РешениеОДопуске.ГОДЕН)
+    def suggest_conclusion(self, session_id: int) -> SuggestedConclusion:
+        result = self._storage.result_of(session_id)
+        if result is None:
+            raise NotFoundError("Для сессии нет результата тестирования")
+        norm = self._storage.current_norm_row()
+        if norm is None:
+            raise NotFoundError("Нормы допуска не заданы")
+        decision = Admission.suggest(result, norm)
+        return SuggestedConclusion(result=result, norm=norm, decision=decision,
+                                         within_norm=decision == Decision.FIT)
 
-    def сохранитьЗаключение(self, предварительное: ПредварительноеЗаключение,
-                            решение: Optional[РешениеОДопуске] = None,
-                            комментарий: str = "") -> ЗаключениеОДопуске:
-        заключение = ЗаключениеОДопуске(
-            кодРезультата=предварительное.результат.код, кодПсихолога=self._сеанс.пользователь.код,
-            кодНормы=предварительное.норма.код, решение=решение or предварительное.решение,
-            дата=date.today(), комментарий=комментарий)
-        self._хранилище.создатьЗаключение(заключение)
-        self._служба.передатьЗаключение(заключение)
-        return заключение
+    def save_conclusion(self, draft: SuggestedConclusion,
+                            decision: Optional[Decision] = None,
+                            comment: str = "") -> Conclusion:
+        conclusion = Conclusion(
+            result_id=draft.result.pk, psychologist_id=self._session_user.user.pk,
+            norm_id=draft.norm.pk, decision=decision or draft.decision,
+            on_date=date.today(), comment=comment)
+        self._storage.create_conclusion(conclusion)
+        self._safety.hand_conclusion(conclusion)
+        return conclusion
 
 
-@стереотип("управляющий")
-class КонтроллерДинамики:
+@stereotype("управляющий")
+class DynamicsController:
     """Прецедент 7. Отслеживать динамику результатов."""
 
-    def __init__(self, хранилище: IХранилище, сеанс: Сеанс) -> None:
-        КонтрольДоступа.требоватьРоль(сеанс, Роль.ПСИХОЛОГ)
-        self._хранилище: IХранилище = хранилище
+    def __init__(self, storage: Storage, work: WorkSession) -> None:
+        Access.require(work, Role.PSYCHOLOGIST)
+        self._storage: Storage = storage
 
-    def запроситьДинамику(self, кодПилота: int) -> ГрафикДинамики:
-        if self._хранилище.найтиПилота(кодПилота) is None:
-            raise НетДанных("Пилот не найден в базе")
-        пары = self._хранилище.найтиРезультатыПилота(кодПилота)
-        if len(пары) < 2:
-            raise НетДанных("Недостаточно данных: нужно не менее двух завершённых сессий")
-        return АнализДинамики.построить(пары)
+    def load_dynamics(self, pilot_id: int) -> DynamicsChart:
+        if self._storage.pilot_by_id(pilot_id) is None:
+            raise NotFoundError("Пилот не найден в базе")
+        pairs = self._storage.results_of_pilot(pilot_id)
+        if len(pairs) < 2:
+            raise NotFoundError("Недостаточно данных: нужно не менее двух завершённых сессий")
+        return DynamicsAnalysis.build(pairs)
 
 
 @dataclass(kw_only=True)
-@стереотип("структура данных")
-class ДанныеПилота:
-    логин: str
-    пароль: str
-    фио: str
-    табельныйНомер: str
-    должность: str = ""
+@stereotype("структура данных")
+class PilotData:
+    login: str
+    password: str
+    full_name: str
+    employee_number: str
+    position: str = ""
 
 
-@стереотип("управляющий")
-class КонтроллерДанныхПилотов:
+@stereotype("управляющий")
+class PilotAdminController:
     """Прецедент 8. Вести данные о пилотах."""
 
-    МИН_ДЛИНА_ПАРОЛЯ = 6
+    MIN_PASSWORD_LENGTH = 6
 
-    def __init__(self, хранилище: IХранилище, сеанс: Сеанс) -> None:
-        КонтрольДоступа.требоватьРоль(сеанс, Роль.АДМИНИСТРАТОР)
-        self._хранилище: IХранилище = хранилище
+    def __init__(self, storage: Storage, work: WorkSession) -> None:
+        Access.require(work, Role.ADMINISTRATOR)
+        self._storage: Storage = storage
 
-    def найтиПилотов(self) -> list[Пилот]:
-        return self._хранилище.найтиПилотов()
+    def all_pilots(self) -> list[Pilot]:
+        return self._storage.all_pilots()
 
-    def проверитьДанные(self, данные: ДанныеПилота, новый: bool = True) -> None:
-        if not (данные.логин.strip() and данные.фио.strip() and данные.табельныйНомер.strip()):
-            raise ОшибкаДанных("Логин, ФИО и табельный номер обязательны")
-        if новый and len(данные.пароль) < self.МИН_ДЛИНА_ПАРОЛЯ:
-            raise ОшибкаДанных(f"Пароль должен содержать не менее {self.МИН_ДЛИНА_ПАРОЛЯ} символов")
+    def validate(self, payload: PilotData, is_new: bool = True) -> None:
+        if not (payload.login.strip() and payload.full_name.strip() and payload.employee_number.strip()):
+            raise DataError("Логин, ФИО и табельный номер обязательны")
+        if is_new and len(payload.password) < self.MIN_PASSWORD_LENGTH:
+            raise DataError(f"Пароль должен содержать не менее {self.MIN_PASSWORD_LENGTH} символов")
 
-    def добавитьПилота(self, данные: ДанныеПилота) -> Пилот:
-        self.проверитьДанные(данные, новый=True)
-        пилот = Пилот(логин=данные.логин, хэшПароля=ХэшПароля.создать(данные.пароль), фио=данные.фио,
-                      табельныйНомер=данные.табельныйНомер, должность=данные.должность)
-        self._хранилище.создатьПилота(пилот)
-        return пилот
+    def add_pilot(self, payload: PilotData) -> Pilot:
+        self.validate(payload, is_new=True)
+        pilot = Pilot(login=payload.login, password_hash=PasswordHash.make(payload.password), full_name=payload.full_name,
+                      employee_number=payload.employee_number, position=payload.position)
+        self._storage.create_pilot(pilot)
+        return pilot
 
-    def изменитьДанные(self, кодПилота: int, данные: ДанныеПилота) -> Пилот:
-        self.проверитьДанные(данные, новый=False)
-        пилот = self._хранилище.найтиПилота(кодПилота)
-        if пилот is None:
-            raise НетДанных("Пилот не найден в базе")
-        пилот.логин, пилот.фио = данные.логин, данные.фио
-        пилот.табельныйНомер, пилот.должность = данные.табельныйНомер, данные.должность
-        if данные.пароль:
-            пилот.хэшПароля = ХэшПароля.создать(данные.пароль)
-        self._хранилище.обновитьПилота(пилот)
-        return пилот
+    def update_pilot(self, pilot_id: int, payload: PilotData) -> Pilot:
+        self.validate(payload, is_new=False)
+        pilot = self._storage.pilot_by_id(pilot_id)
+        if pilot is None:
+            raise NotFoundError("Пилот не найден в базе")
+        pilot.login, pilot.full_name = payload.login, payload.full_name
+        pilot.employee_number, pilot.position = payload.employee_number, payload.position
+        if payload.password:
+            pilot.password_hash = PasswordHash.make(payload.password)
+        self._storage.save_pilot(pilot)
+        return pilot
 
-    def удалитьПилота(self, кодПилота: int) -> None:
-        if self._хранилище.найтиСессииПилота(кодПилота):
-            raise ОшибкаСостояния("Нельзя удалить пилота: у него есть сессии тестирования")
-        self._хранилище.удалитьПилота(кодПилота)
+    def delete_pilot(self, pilot_id: int) -> None:
+        if self._storage.sessions_of(pilot_id):
+            raise StateError("Нельзя удалить пилота: у него есть сессии тестирования")
+        self._storage.delete_pilot(pilot_id)
 
 
-@стереотип("управляющий")
-class КонтроллерНорм:
+@stereotype("управляющий")
+class NormController:
     """Прецедент 9. Настраивать нормы допуска."""
 
-    def __init__(self, хранилище: IХранилище, сеанс: Сеанс) -> None:
-        КонтрольДоступа.требоватьРоль(сеанс, Роль.АДМИНИСТРАТОР)
-        self._хранилище: IХранилище = хранилище
+    def __init__(self, storage: Storage, work: WorkSession) -> None:
+        Access.require(work, Role.ADMINISTRATOR)
+        self._storage: Storage = storage
 
-    def получитьДействующиеНормы(self) -> НормаДопуска:
-        норма = self._хранилище.найтиДействующуюНорму()
-        if норма is None:
-            raise НетДанных("Нормы допуска ещё не заданы")
-        return норма
+    def current_norms(self) -> AdmissionNorm:
+        norm = self._storage.current_norm_row()
+        if norm is None:
+            raise NotFoundError("Нормы допуска ещё не заданы")
+        return norm
 
-    def сохранитьНормы(self, значения: НормаДопуска) -> НормаДопуска:
-        значения.проверитьДиапазоны()
-        действующая = self._хранилище.найтиДействующуюНорму()
-        if действующая is None or self._хранилище.нормаИспользуется(действующая.код):
-            значения.код = None
-            self._хранилище.создатьНорму(значения)
+    def save_norms(self, values: AdmissionNorm) -> AdmissionNorm:
+        values.check_ranges()
+        current_norm = self._storage.current_norm_row()
+        if current_norm is None or self._storage.norm_is_used(current_norm.pk):
+            values.pk = None
+            self._storage.create_norm(values)
         else:
-            значения.код = действующая.код
-            self._хранилище.обновитьНорму(значения)
-        return значения
+            values.pk = current_norm.pk
+            self._storage.update_norm(values)
+        return values
 
 
-@стереотип("управляющий")
-class КонтроллерОтчётов:
+@stereotype("управляющий")
+class ReportController:
     """Прецедент 10. Формировать сводный отчёт."""
 
-    def __init__(self, хранилище: IХранилище, сеанс: Сеанс, служба: IИнтерфейсСлужбыБезопасности) -> None:
-        КонтрольДоступа.требоватьРоль(сеанс, Роль.АДМИНИСТРАТОР)
-        self._хранилище: IХранилище = хранилище
-        self._сеанс: Сеанс = сеанс
-        self._служба: IИнтерфейсСлужбыБезопасности = служба
+    def __init__(self, storage: Storage, work: WorkSession, safety: SafetyService) -> None:
+        Access.require(work, Role.ADMINISTRATOR)
+        self._storage: Storage = storage
+        self._session_user: WorkSession = work
+        self._safety: SafetyService = safety
 
-    def сформироватьОтчёт(self, начало: date, конец: date, кодыПилотов: list[int]) -> СводныйОтчёт:
-        if начало > конец:
-            raise ОшибкаДанных("Начало периода позже его конца")
-        пилоты = self._хранилище.найтиПилотовГруппы(кодыПилотов)
-        данные = self._хранилище.найтиРезультатыГруппы(кодыПилотов, начало, конец)
-        if not данные:
-            raise НетДанных("Нет данных за указанный период")
-        отчёт = СервисОтчётов.агрегировать(пилоты, данные, self._сеанс.пользователь.код, начало, конец)
-        self._хранилище.создатьОтчёт(отчёт)
-        self._служба.передатьОтчёт(отчёт)
-        return отчёт
+    def build_report(self, start: date, end: date, pilot_ids: list[int]) -> SummaryReport:
+        if start > end:
+            raise DataError("Начало периода позже его конца")
+        pilots = self._storage.pilots_in(pilot_ids)
+        payload = self._storage.results_between(pilot_ids, start, end)
+        if not payload:
+            raise NotFoundError("Нет данных за указанный период")
+        report = ReportService.aggregate(pilots, payload, self._session_user.user.pk, start, end)
+        self._storage.create_report(report)
+        self._safety.hand_report(report)
+        return report

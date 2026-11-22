@@ -8,119 +8,119 @@ from datetime import date, datetime
 from typing import Optional
 
 from attention_system.business.entities import (
-    Администратор, АвиационныйПсихолог, ЗаключениеОДопуске, НормаДопуска, Пилот, Пользователь,
-    РезультатТестирования, СводныйОтчёт, СессияТестирования, ТаблицаШульте)
+    Administrator, Psychologist, Conclusion, AdmissionNorm, Pilot, User,
+    TestResult, SummaryReport, TestSession, SchulteTable)
 from attention_system.business.enums import (
-    РасположениеЧисел, РешениеОДопуске, Роль, СтатусСессии, ТипПроверки)
-from attention_system.business.errors import ОшибкаДанных, ОшибкаСостояния
-from attention_system.markup import стереотип
+    NumberOrder, Decision, Role, SessionStatus, CheckType)
+from attention_system.business.errors import DataError, StateError
+from attention_system.markup import stereotype
 
 
-@стереотип("интерфейс")
-class IХранилище(ABC):
+@stereotype("интерфейс")
+class Storage(ABC):
     """Интерфейс подсистемы «Хранилище данных». Все операции атомарны."""
 
     # --- пользователи ---
     @abstractmethod
-    def найтиПользователяПоЛогину(self, логин: str) -> Optional[Пользователь]: ...
+    def user_by_login(self, login: str) -> Optional[User]: ...
 
     @abstractmethod
-    def отметитьВход(self, кодПользователя: int, момент: datetime) -> None: ...
+    def mark_login(self, user_id: int, moment: datetime) -> None: ...
 
     @abstractmethod
-    def создатьПсихолога(self, психолог: АвиационныйПсихолог) -> int: ...
+    def create_psychologist(self, psychologist: Psychologist) -> int: ...
 
     @abstractmethod
-    def создатьАдминистратора(self, администратор: Администратор) -> int: ...
+    def create_administrator(self, administrator: Administrator) -> int: ...
 
     # --- пилоты ---
     @abstractmethod
-    def создатьПилота(self, пилот: Пилот) -> int: ...
+    def create_pilot(self, pilot: Pilot) -> int: ...
 
     @abstractmethod
-    def найтиПилота(self, код: int) -> Optional[Пилот]: ...
+    def pilot_by_id(self, pk: int) -> Optional[Pilot]: ...
 
     @abstractmethod
-    def найтиПилотов(self) -> list[Пилот]: ...
+    def all_pilots(self) -> list[Pilot]: ...
 
     @abstractmethod
-    def найтиПилотовГруппы(self, коды: list[int]) -> list[Пилот]: ...
+    def pilots_in(self, ids: list[int]) -> list[Pilot]: ...
 
     @abstractmethod
-    def обновитьПилота(self, пилот: Пилот) -> None: ...
+    def save_pilot(self, pilot: Pilot) -> None: ...
 
     @abstractmethod
-    def удалитьПилота(self, код: int) -> None: ...
+    def delete_pilot(self, pk: int) -> None: ...
 
     # --- сессии, таблицы, результаты ---
     @abstractmethod
-    def создатьСессию(self, сессия: СессияТестирования) -> int: ...
+    def create_session(self, session: TestSession) -> int: ...
 
     @abstractmethod
-    def найтиСессию(self, код: int) -> Optional[СессияТестирования]: ...
+    def session_by_id(self, pk: int) -> Optional[TestSession]: ...
 
     @abstractmethod
-    def найтиНазначеннуюСессию(self, кодПилота: int) -> Optional[СессияТестирования]: ...
+    def assigned_session(self, pilot_id: int) -> Optional[TestSession]: ...
 
     @abstractmethod
-    def найтиСессииПилота(self, кодПилота: int,
-                          статус: Optional[СтатусСессии] = None) -> list[СессияТестирования]: ...
+    def sessions_of(self, pilot_id: int,
+                          status: Optional[SessionStatus] = None) -> list[TestSession]: ...
 
     @abstractmethod
-    def обновитьСессию(self, сессия: СессияТестирования) -> None: ...
+    def save_session(self, session: TestSession) -> None: ...
 
     @abstractmethod
-    def создатьТаблицу(self, таблица: ТаблицаШульте) -> int: ...
+    def create_table(self, table: SchulteTable) -> int: ...
 
     @abstractmethod
-    def найтиТаблицыСессии(self, кодСессии: int) -> list[ТаблицаШульте]: ...
+    def tables_of(self, session_id: int) -> list[SchulteTable]: ...
 
     @abstractmethod
-    def удалитьТаблицыСессии(self, кодСессии: int) -> None: ...
+    def delete_tables(self, session_id: int) -> None: ...
 
     @abstractmethod
-    def сохранитьРезультатСессии(self, сессия: СессияТестирования,
-                                 результат: РезультатТестирования) -> int: ...
+    def save_result(self, session: TestSession,
+                                 result: TestResult) -> int: ...
 
     @abstractmethod
-    def найтиРезультатСессии(self, кодСессии: int) -> Optional[РезультатТестирования]: ...
+    def result_of(self, session_id: int) -> Optional[TestResult]: ...
 
     @abstractmethod
-    def найтиРезультатыПилота(self, кодПилота: int
-                              ) -> list[tuple[СессияТестирования, РезультатТестирования]]: ...
+    def results_of_pilot(self, pilot_id: int
+                              ) -> list[tuple[TestSession, TestResult]]: ...
 
     @abstractmethod
-    def найтиРезультатыГруппы(self, коды: list[int], начало: date, конец: date
-                              ) -> list[tuple[СессияТестирования, РезультатТестирования]]: ...
+    def results_between(self, ids: list[int], start: date, end: date
+                              ) -> list[tuple[TestSession, TestResult]]: ...
 
     # --- нормы и заключения ---
     @abstractmethod
-    def найтиДействующуюНорму(self) -> Optional[НормаДопуска]: ...
+    def current_norm_row(self) -> Optional[AdmissionNorm]: ...
 
     @abstractmethod
-    def создатьНорму(self, норма: НормаДопуска) -> int: ...
+    def create_norm(self, norm: AdmissionNorm) -> int: ...
 
     @abstractmethod
-    def обновитьНорму(self, норма: НормаДопуска) -> None: ...
+    def update_norm(self, norm: AdmissionNorm) -> None: ...
 
     @abstractmethod
-    def нормаИспользуется(self, кодНормы: int) -> bool: ...
+    def norm_is_used(self, norm_id: int) -> bool: ...
 
     @abstractmethod
-    def создатьЗаключение(self, заключение: ЗаключениеОДопуске) -> int: ...
+    def create_conclusion(self, conclusion: Conclusion) -> int: ...
 
     @abstractmethod
-    def найтиЗаключенияРезультата(self, кодРезультата: int) -> list[ЗаключениеОДопуске]: ...
+    def conclusions_for(self, result_id: int) -> list[Conclusion]: ...
 
     # --- отчёты ---
     @abstractmethod
-    def создатьОтчёт(self, отчёт: СводныйОтчёт) -> int: ...
+    def create_report(self, report: SummaryReport) -> int: ...
 
     @abstractmethod
-    def найтиПилотовОтчёта(self, кодОтчёта: int) -> list[int]: ...
+    def pilots_of_report(self, report_id: int) -> list[int]: ...
 
 
-СХЕМА = """
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY AUTOINCREMENT,
     login TEXT NOT NULL UNIQUE,
@@ -179,293 +179,293 @@ CREATE TABLE IF NOT EXISTS summary_report_pilots (
 """
 
 
-@стереотип("граничный")
-class ХранилищеSQLite(IХранилище):
+@stereotype("граничный")
+class SqliteStorage(Storage):
     """Реализация интерфейса хранилища; играет роль посредника подсистемы (subsystem proxy).
     Одно соединение защищено блокировкой, поэтому объект безопасно использовать из многих потоков."""
 
-    def __init__(self, путь: str = ":memory:") -> None:
-        self._соединение: sqlite3.Connection = sqlite3.connect(путь, check_same_thread=False)
-        self._соединение.row_factory = sqlite3.Row
-        self._соединение.execute("PRAGMA foreign_keys = ON")
-        self._замок: threading.RLock = threading.RLock()
-        with self._замок, self._соединение:
-            self._соединение.executescript(СХЕМА)
+    def __init__(self, path: str = ":memory:") -> None:
+        self._connection: sqlite3.Connection = sqlite3.connect(path, check_same_thread=False)
+        self._connection.row_factory = sqlite3.Row
+        self._connection.execute("PRAGMA foreign_keys = ON")
+        self._lock: threading.RLock = threading.RLock()
+        with self._lock, self._connection:
+            self._connection.executescript(SCHEMA)
 
     # ---------- вспомогательные операции ----------
-    def _запрос(self, sql: str, параметры: tuple = ()) -> list[sqlite3.Row]:
-        with self._замок:
-            return self._соединение.execute(sql, параметры).fetchall()
+    def _query(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
+        with self._lock:
+            return self._connection.execute(sql, params).fetchall()
 
-    def _одна(self, sql: str, параметры: tuple = ()) -> Optional[sqlite3.Row]:
-        строки = self._запрос(sql, параметры)
-        return строки[0] if строки else None
+    def _one(self, sql: str, params: tuple = ()) -> Optional[sqlite3.Row]:
+        lines = self._query(sql, params)
+        return lines[0] if lines else None
 
-    def _вставить(self, sql: str, параметры: tuple) -> int:
+    def _insert(self, sql: str, params: tuple) -> int:
         try:
-            with self._замок, self._соединение:
-                return self._соединение.execute(sql, параметры).lastrowid
-        except sqlite3.IntegrityError as ошибка:
-            raise ОшибкаДанных(f"Нарушено ограничение целостности: {ошибка}") from ошибка
+            with self._lock, self._connection:
+                return self._connection.execute(sql, params).lastrowid
+        except sqlite3.IntegrityError as error:
+            raise DataError(f"Нарушено ограничение целостности: {error}") from error
 
-    def _вставитьПользователя(self, п: Пользователь) -> int:
-        курсор = self._соединение.execute(
+    def _insert_user(self, p: User) -> int:
+        cursor = self._connection.execute(
             "INSERT INTO users(login, password_hash, role, last_login) VALUES (?,?,?,?)",
-            (п.логин, п.хэшПароля, п.роль.value, п.последнийВход.isoformat() if п.последнийВход else None))
-        п.код = курсор.lastrowid
-        return п.код
+            (p.login, p.password_hash, p.role.value, p.last_login.isoformat() if p.last_login else None))
+        p.pk = cursor.lastrowid
+        return p.pk
 
-    def _создатьПрофиль(self, пользователь: Пользователь, sql: str, значения: tuple) -> int:
+    def _create_profile(self, user: User, sql: str, values: tuple) -> int:
         try:
-            with self._замок, self._соединение:
-                код = self._вставитьПользователя(пользователь)
-                self._соединение.execute(sql, (код, *значения))
-                return код
-        except sqlite3.IntegrityError as ошибка:
-            пользователь.код = None
-            raise ОшибкаДанных(f"Нарушено ограничение целостности: {ошибка}") from ошибка
+            with self._lock, self._connection:
+                pk = self._insert_user(user)
+                self._connection.execute(sql, (pk, *values))
+                return pk
+        except sqlite3.IntegrityError as error:
+            user.pk = None
+            raise DataError(f"Нарушено ограничение целостности: {error}") from error
 
     @staticmethod
-    def _время(текст: Optional[str]) -> Optional[datetime]:
-        return datetime.fromisoformat(текст) if текст else None
+    def _parse_time(text: Optional[str]) -> Optional[datetime]:
+        return datetime.fromisoformat(text) if text else None
 
     # ---------- пользователи ----------
-    def найтиПользователяПоЛогину(self, логин: str) -> Optional[Пользователь]:
-        строка = self._одна("SELECT * FROM users WHERE login = ?", (логин,))
-        return self._собратьПользователя(строка) if строка else None
+    def user_by_login(self, login: str) -> Optional[User]:
+        row = self._one("SELECT * FROM users WHERE login = ?", (login,))
+        return self._load_user(row) if row else None
 
-    def _собратьПользователя(self, у: sqlite3.Row) -> Пользователь:
-        общие = dict(логин=у["login"], хэшПароля=у["password_hash"], код=у["user_id"],
-                     последнийВход=self._время(у["last_login"]))
-        роль = Роль(у["role"])
-        if роль == Роль.ПИЛОТ:
-            п = self._одна("SELECT * FROM pilots WHERE pilot_id = ?", (у["user_id"],))
-            return Пилот(**общие, фио=п["full_name"], табельныйНомер=п["personnel_number"],
-                         должность=п["position"])
-        if роль == Роль.ПСИХОЛОГ:
-            п = self._одна("SELECT * FROM psychologists WHERE psychologist_id = ?", (у["user_id"],))
-            return АвиационныйПсихолог(**общие, фио=п["full_name"])
-        п = self._одна("SELECT * FROM administrators WHERE admin_id = ?", (у["user_id"],))
-        return Администратор(**общие, фио=п["full_name"])
+    def _load_user(self, u: sqlite3.Row) -> User:
+        common = dict(login=u["login"], password_hash=u["password_hash"], pk=u["user_id"],
+                     last_login=self._parse_time(u["last_login"]))
+        role = Role(u["role"])
+        if role == Role.PILOT:
+            p = self._one("SELECT * FROM pilots WHERE pilot_id = ?", (u["user_id"],))
+            return Pilot(**common, full_name=p["full_name"], employee_number=p["personnel_number"],
+                         position=p["position"])
+        if role == Role.PSYCHOLOGIST:
+            p = self._one("SELECT * FROM psychologists WHERE psychologist_id = ?", (u["user_id"],))
+            return Psychologist(**common, full_name=p["full_name"])
+        p = self._one("SELECT * FROM administrators WHERE admin_id = ?", (u["user_id"],))
+        return Administrator(**common, full_name=p["full_name"])
 
-    def отметитьВход(self, кодПользователя: int, момент: datetime) -> None:
-        with self._замок, self._соединение:
-            self._соединение.execute("UPDATE users SET last_login = ? WHERE user_id = ?",
-                                     (момент.isoformat(), кодПользователя))
+    def mark_login(self, user_id: int, moment: datetime) -> None:
+        with self._lock, self._connection:
+            self._connection.execute("UPDATE users SET last_login = ? WHERE user_id = ?",
+                                     (moment.isoformat(), user_id))
 
-    def создатьПсихолога(self, психолог: АвиационныйПсихолог) -> int:
-        return self._создатьПрофиль(психолог, "INSERT INTO psychologists VALUES (?,?)", (психолог.фио,))
+    def create_psychologist(self, psychologist: Psychologist) -> int:
+        return self._create_profile(psychologist, "INSERT INTO psychologists VALUES (?,?)", (psychologist.full_name,))
 
-    def создатьАдминистратора(self, администратор: Администратор) -> int:
-        return self._создатьПрофиль(администратор, "INSERT INTO administrators VALUES (?,?)",
-                                    (администратор.фио,))
+    def create_administrator(self, administrator: Administrator) -> int:
+        return self._create_profile(administrator, "INSERT INTO administrators VALUES (?,?)",
+                                    (administrator.full_name,))
 
     # ---------- пилоты ----------
-    def создатьПилота(self, пилот: Пилот) -> int:
-        return self._создатьПрофиль(пилот, "INSERT INTO pilots VALUES (?,?,?,?)",
-                                    (пилот.фио, пилот.табельныйНомер, пилот.должность))
+    def create_pilot(self, pilot: Pilot) -> int:
+        return self._create_profile(pilot, "INSERT INTO pilots VALUES (?,?,?,?)",
+                                    (pilot.full_name, pilot.employee_number, pilot.position))
 
-    def найтиПилота(self, код: int) -> Optional[Пилот]:
-        строка = self._одна("SELECT * FROM users WHERE user_id = ? AND role = 'pilot'", (код,))
-        return self._собратьПользователя(строка) if строка else None
+    def pilot_by_id(self, pk: int) -> Optional[Pilot]:
+        row = self._one("SELECT * FROM users WHERE user_id = ? AND role = 'pilot'", (pk,))
+        return self._load_user(row) if row else None
 
-    def найтиПилотов(self) -> list[Пилот]:
-        строки = self._запрос("SELECT u.* FROM users u JOIN pilots p ON p.pilot_id = u.user_id "
+    def all_pilots(self) -> list[Pilot]:
+        lines = self._query("SELECT u.* FROM users u JOIN pilots p ON p.pilot_id = u.user_id "
                               "ORDER BY p.full_name")
-        return [self._собратьПользователя(с) for с in строки]
+        return [self._load_user(s) for s in lines]
 
-    def найтиПилотовГруппы(self, коды: list[int]) -> list[Пилот]:
-        if not коды:
+    def pilots_in(self, ids: list[int]) -> list[Pilot]:
+        if not ids:
             return []
-        метки = ",".join("?" * len(коды))
-        строки = self._запрос(f"SELECT u.* FROM users u JOIN pilots p ON p.pilot_id = u.user_id "
-                              f"WHERE u.user_id IN ({метки}) ORDER BY p.full_name", tuple(коды))
-        return [self._собратьПользователя(с) for с in строки]
+        placeholders = ",".join("?" * len(ids))
+        lines = self._query(f"SELECT u.* FROM users u JOIN pilots p ON p.pilot_id = u.user_id "
+                              f"WHERE u.user_id IN ({placeholders}) ORDER BY p.full_name", tuple(ids))
+        return [self._load_user(s) for s in lines]
 
-    def обновитьПилота(self, пилот: Пилот) -> None:
+    def save_pilot(self, pilot: Pilot) -> None:
         try:
-            with self._замок, self._соединение:
-                self._соединение.execute("UPDATE users SET login = ?, password_hash = ? WHERE user_id = ?",
-                                         (пилот.логин, пилот.хэшПароля, пилот.код))
-                self._соединение.execute(
+            with self._lock, self._connection:
+                self._connection.execute("UPDATE users SET login = ?, password_hash = ? WHERE user_id = ?",
+                                         (pilot.login, pilot.password_hash, pilot.pk))
+                self._connection.execute(
                     "UPDATE pilots SET full_name = ?, personnel_number = ?, position = ? WHERE pilot_id = ?",
-                    (пилот.фио, пилот.табельныйНомер, пилот.должность, пилот.код))
-        except sqlite3.IntegrityError as ошибка:
-            raise ОшибкаДанных(f"Нарушено ограничение целостности: {ошибка}") from ошибка
+                    (pilot.full_name, pilot.employee_number, pilot.position, pilot.pk))
+        except sqlite3.IntegrityError as error:
+            raise DataError(f"Нарушено ограничение целостности: {error}") from error
 
-    def удалитьПилота(self, код: int) -> None:
+    def delete_pilot(self, pk: int) -> None:
         try:
-            with self._замок, self._соединение:
-                self._соединение.execute("DELETE FROM pilots WHERE pilot_id = ?", (код,))
-                self._соединение.execute("DELETE FROM users WHERE user_id = ?", (код,))
-        except sqlite3.IntegrityError as ошибка:
-            raise ОшибкаСостояния("Нельзя удалить пилота: есть связанные записи") from ошибка
+            with self._lock, self._connection:
+                self._connection.execute("DELETE FROM pilots WHERE pilot_id = ?", (pk,))
+                self._connection.execute("DELETE FROM users WHERE user_id = ?", (pk,))
+        except sqlite3.IntegrityError as error:
+            raise StateError("Нельзя удалить пилота: есть связанные записи") from error
 
     # ---------- сессии ----------
     @staticmethod
-    def _сессия(с: sqlite3.Row) -> СессияТестирования:
-        return СессияТестирования(
-            код=с["session_id"], кодПилота=с["pilot_id"], кодПсихолога=с["psychologist_id"],
-            датаВремя=datetime.fromisoformat(с["date_time"]), методика=с["method"],
-            типПроверки=ТипПроверки(с["check_type"]), статус=СтатусСессии(с["status"]))
+    def _session(s: sqlite3.Row) -> TestSession:
+        return TestSession(
+            pk=s["session_id"], pilot_id=s["pilot_id"], psychologist_id=s["psychologist_id"],
+            occurred_at=datetime.fromisoformat(s["date_time"]), method=s["method"],
+            check_type=CheckType(s["check_type"]), status=SessionStatus(s["status"]))
 
-    def создатьСессию(self, сессия: СессияТестирования) -> int:
-        сессия.код = self._вставить(
+    def create_session(self, session: TestSession) -> int:
+        session.pk = self._insert(
             "INSERT INTO test_sessions(pilot_id, psychologist_id, date_time, method, check_type, status) "
             "VALUES (?,?,?,?,?,?)",
-            (сессия.кодПилота, сессия.кодПсихолога, сессия.датаВремя.isoformat(), сессия.методика,
-             сессия.типПроверки.value, сессия.статус.value))
-        return сессия.код
+            (session.pilot_id, session.psychologist_id, session.occurred_at.isoformat(), session.method,
+             session.check_type.value, session.status.value))
+        return session.pk
 
-    def найтиСессию(self, код: int) -> Optional[СессияТестирования]:
-        строка = self._одна("SELECT * FROM test_sessions WHERE session_id = ?", (код,))
-        return self._сессия(строка) if строка else None
+    def session_by_id(self, pk: int) -> Optional[TestSession]:
+        row = self._one("SELECT * FROM test_sessions WHERE session_id = ?", (pk,))
+        return self._session(row) if row else None
 
-    def найтиНазначеннуюСессию(self, кодПилота: int) -> Optional[СессияТестирования]:
-        строка = self._одна("SELECT * FROM test_sessions WHERE pilot_id = ? AND status = ? "
-                            "ORDER BY date_time LIMIT 1", (кодПилота, СтатусСессии.НАЗНАЧЕНА.value))
-        return self._сессия(строка) if строка else None
+    def assigned_session(self, pilot_id: int) -> Optional[TestSession]:
+        row = self._one("SELECT * FROM test_sessions WHERE pilot_id = ? AND status = ? "
+                            "ORDER BY date_time LIMIT 1", (pilot_id, SessionStatus.ASSIGNED.value))
+        return self._session(row) if row else None
 
-    def найтиСессииПилота(self, кодПилота: int,
-                          статус: Optional[СтатусСессии] = None) -> list[СессияТестирования]:
-        sql, параметры = "SELECT * FROM test_sessions WHERE pilot_id = ?", [кодПилота]
-        if статус is not None:
+    def sessions_of(self, pilot_id: int,
+                          status: Optional[SessionStatus] = None) -> list[TestSession]:
+        sql, params = "SELECT * FROM test_sessions WHERE pilot_id = ?", [pilot_id]
+        if status is not None:
             sql += " AND status = ?"
-            параметры.append(статус.value)
-        return [self._сессия(с) for с in self._запрос(sql + " ORDER BY date_time", tuple(параметры))]
+            params.append(status.value)
+        return [self._session(s) for s in self._query(sql + " ORDER BY date_time", tuple(params))]
 
-    def обновитьСессию(self, сессия: СессияТестирования) -> None:
-        with self._замок, self._соединение:
-            self._соединение.execute("UPDATE test_sessions SET status = ? WHERE session_id = ?",
-                                     (сессия.статус.value, сессия.код))
+    def save_session(self, session: TestSession) -> None:
+        with self._lock, self._connection:
+            self._connection.execute("UPDATE test_sessions SET status = ? WHERE session_id = ?",
+                                     (session.status.value, session.pk))
 
     # ---------- таблицы ----------
-    def создатьТаблицу(self, таблица: ТаблицаШульте) -> int:
-        таблица.код = self._вставить(
+    def create_table(self, table: SchulteTable) -> int:
+        table.pk = self._insert(
             "INSERT INTO schedule_tables(session_id, order_number, size, arrangement, time_seconds) "
             "VALUES (?,?,?,?,?)",
-            (таблица.кодСессии, таблица.номерПоПорядку, таблица.размер,
-             таблица.расположениеЧисел.value, таблица.времяСек))
-        return таблица.код
+            (table.session_id, table.order_no, table.size,
+             table.number_order.value, table.time_sec))
+        return table.pk
 
-    def найтиТаблицыСессии(self, кодСессии: int) -> list[ТаблицаШульте]:
-        строки = self._запрос("SELECT * FROM schedule_tables WHERE session_id = ? ORDER BY order_number",
-                              (кодСессии,))
-        return [ТаблицаШульте(код=с["table_id"], кодСессии=с["session_id"], номерПоПорядку=с["order_number"],
-                              размер=с["size"], расположениеЧисел=РасположениеЧисел(с["arrangement"]),
-                              времяСек=с["time_seconds"]) for с in строки]
+    def tables_of(self, session_id: int) -> list[SchulteTable]:
+        lines = self._query("SELECT * FROM schedule_tables WHERE session_id = ? ORDER BY order_number",
+                              (session_id,))
+        return [SchulteTable(pk=s["table_id"], session_id=s["session_id"], order_no=s["order_number"],
+                              size=s["size"], number_order=NumberOrder(s["arrangement"]),
+                              time_sec=s["time_seconds"]) for s in lines]
 
-    def удалитьТаблицыСессии(self, кодСессии: int) -> None:
-        with self._замок, self._соединение:
-            self._соединение.execute("DELETE FROM schedule_tables WHERE session_id = ?", (кодСессии,))
+    def delete_tables(self, session_id: int) -> None:
+        with self._lock, self._connection:
+            self._connection.execute("DELETE FROM schedule_tables WHERE session_id = ?", (session_id,))
 
     # ---------- результаты ----------
     @staticmethod
-    def _результат(р: sqlite3.Row) -> РезультатТестирования:
-        return РезультатТестирования(код=р["result_id"], кодСессии=р["session_id"],
-                                     эр=р["er"], вр=р["vr"], пу=р["pu"])
+    def _result_row(r: sqlite3.Row) -> TestResult:
+        return TestResult(pk=r["result_id"], session_id=r["session_id"],
+                                     er=r["er"], vr=r["vr"], pu=r["pu"])
 
-    def сохранитьРезультатСессии(self, сессия: СессияТестирования, результат: РезультатТестирования) -> int:
+    def save_result(self, session: TestSession, result: TestResult) -> int:
         """Одна транзакция: результат сохраняется вместе с новым статусом сессии."""
         try:
-            with self._замок, self._соединение:
-                курсор = self._соединение.execute(
+            with self._lock, self._connection:
+                cursor = self._connection.execute(
                     "INSERT INTO test_results(session_id, er, vr, pu) VALUES (?,?,?,?)",
-                    (результат.кодСессии, результат.эр, результат.вр, результат.пу))
-                self._соединение.execute("UPDATE test_sessions SET status = ? WHERE session_id = ?",
-                                         (сессия.статус.value, сессия.код))
-                результат.код = курсор.lastrowid
-                return результат.код
-        except sqlite3.IntegrityError as ошибка:
-            raise ОшибкаДанных(f"Нарушено ограничение целостности: {ошибка}") from ошибка
+                    (result.session_id, result.er, result.vr, result.pu))
+                self._connection.execute("UPDATE test_sessions SET status = ? WHERE session_id = ?",
+                                         (session.status.value, session.pk))
+                result.pk = cursor.lastrowid
+                return result.pk
+        except sqlite3.IntegrityError as error:
+            raise DataError(f"Нарушено ограничение целостности: {error}") from error
 
-    def найтиРезультатСессии(self, кодСессии: int) -> Optional[РезультатТестирования]:
-        строка = self._одна("SELECT * FROM test_results WHERE session_id = ?", (кодСессии,))
-        return self._результат(строка) if строка else None
+    def result_of(self, session_id: int) -> Optional[TestResult]:
+        row = self._one("SELECT * FROM test_results WHERE session_id = ?", (session_id,))
+        return self._result_row(row) if row else None
 
-    def _пары(self, sql: str, параметры: tuple) -> list[tuple[СессияТестирования, РезультатТестирования]]:
-        результат = []
-        for с in self._запрос(sql, параметры):
-            сессия = self._сессия(с)
-            результат.append((сессия, РезультатТестирования(
-                код=с["result_id"], кодСессии=сессия.код, эр=с["er"], вр=с["vr"], пу=с["pu"])))
-        return результат
+    def _pairs(self, sql: str, params: tuple) -> list[tuple[TestSession, TestResult]]:
+        result = []
+        for s in self._query(sql, params):
+            session = self._session(s)
+            result.append((session, TestResult(
+                pk=s["result_id"], session_id=session.pk, er=s["er"], vr=s["vr"], pu=s["pu"])))
+        return result
 
-    def найтиРезультатыПилота(self, кодПилота: int) -> list[tuple[СессияТестирования, РезультатТестирования]]:
-        return self._пары("SELECT s.*, r.result_id, r.er, r.vr, r.pu FROM test_sessions s "
+    def results_of_pilot(self, pilot_id: int) -> list[tuple[TestSession, TestResult]]:
+        return self._pairs("SELECT s.*, r.result_id, r.er, r.vr, r.pu FROM test_sessions s "
                           "JOIN test_results r ON r.session_id = s.session_id "
-                          "WHERE s.pilot_id = ? AND s.status = 'завершена' ORDER BY s.date_time", (кодПилота,))
+                          "WHERE s.pilot_id = ? AND s.status = 'завершена' ORDER BY s.date_time", (pilot_id,))
 
-    def найтиРезультатыГруппы(self, коды: list[int], начало: date, конец: date
-                              ) -> list[tuple[СессияТестирования, РезультатТестирования]]:
-        if not коды:
+    def results_between(self, ids: list[int], start: date, end: date
+                              ) -> list[tuple[TestSession, TestResult]]:
+        if not ids:
             return []
-        метки = ",".join("?" * len(коды))
-        return self._пары(
+        placeholders = ",".join("?" * len(ids))
+        return self._pairs(
             f"SELECT s.*, r.result_id, r.er, r.vr, r.pu FROM test_sessions s "
             f"JOIN test_results r ON r.session_id = s.session_id "
-            f"WHERE s.pilot_id IN ({метки}) AND s.status = 'завершена' "
+            f"WHERE s.pilot_id IN ({placeholders}) AND s.status = 'завершена' "
             f"AND date(s.date_time) BETWEEN ? AND ? ORDER BY s.date_time",
-            (*коды, начало.isoformat(), конец.isoformat()))
+            (*ids, start.isoformat(), end.isoformat()))
 
     # ---------- нормы и заключения ----------
     @staticmethod
-    def _норма(н: sqlite3.Row) -> НормаДопуска:
-        return НормаДопуска(код=н["norm_id"], эрМин=н["er_min"], эрМакс=н["er_max"], врМин=н["vr_min"],
-                            врМакс=н["vr_max"], пуМин=н["pu_min"], пуМакс=н["pu_max"])
+    def _norm(n: sqlite3.Row) -> AdmissionNorm:
+        return AdmissionNorm(pk=n["norm_id"], er_min=n["er_min"], er_max=n["er_max"], vr_min=n["vr_min"],
+                            vr_max=n["vr_max"], pu_min=n["pu_min"], pu_max=n["pu_max"])
 
-    def найтиДействующуюНорму(self) -> Optional[НормаДопуска]:
-        строка = self._одна("SELECT * FROM admission_norms ORDER BY norm_id DESC LIMIT 1")
-        return self._норма(строка) if строка else None
+    def current_norm_row(self) -> Optional[AdmissionNorm]:
+        row = self._one("SELECT * FROM admission_norms ORDER BY norm_id DESC LIMIT 1")
+        return self._norm(row) if row else None
 
-    def создатьНорму(self, норма: НормаДопуска) -> int:
-        норма.код = self._вставить(
+    def create_norm(self, norm: AdmissionNorm) -> int:
+        norm.pk = self._insert(
             "INSERT INTO admission_norms(er_min, er_max, vr_min, vr_max, pu_min, pu_max) VALUES (?,?,?,?,?,?)",
-            (норма.эрМин, норма.эрМакс, норма.врМин, норма.врМакс, норма.пуМин, норма.пуМакс))
-        return норма.код
+            (norm.er_min, norm.er_max, norm.vr_min, norm.vr_max, norm.pu_min, norm.pu_max))
+        return norm.pk
 
-    def обновитьНорму(self, норма: НормаДопуска) -> None:
-        with self._замок, self._соединение:
-            self._соединение.execute(
+    def update_norm(self, norm: AdmissionNorm) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
                 "UPDATE admission_norms SET er_min=?, er_max=?, vr_min=?, vr_max=?, pu_min=?, pu_max=? "
                 "WHERE norm_id = ?",
-                (норма.эрМин, норма.эрМакс, норма.врМин, норма.врМакс, норма.пуМин, норма.пуМакс, норма.код))
+                (norm.er_min, norm.er_max, norm.vr_min, norm.vr_max, norm.pu_min, norm.pu_max, norm.pk))
 
-    def нормаИспользуется(self, кодНормы: int) -> bool:
-        return self._одна("SELECT 1 FROM admission_conclusions WHERE norm_id = ? LIMIT 1", (кодНормы,)) is not None
+    def norm_is_used(self, norm_id: int) -> bool:
+        return self._one("SELECT 1 FROM admission_conclusions WHERE norm_id = ? LIMIT 1", (norm_id,)) is not None
 
-    def создатьЗаключение(self, заключение: ЗаключениеОДопуске) -> int:
-        заключение.код = self._вставить(
+    def create_conclusion(self, conclusion: Conclusion) -> int:
+        conclusion.pk = self._insert(
             "INSERT INTO admission_conclusions(result_id, psychologist_id, norm_id, status, date, comment) "
             "VALUES (?,?,?,?,?,?)",
-            (заключение.кодРезультата, заключение.кодПсихолога, заключение.кодНормы,
-             заключение.решение.value, заключение.дата.isoformat(), заключение.комментарий))
-        return заключение.код
+            (conclusion.result_id, conclusion.psychologist_id, conclusion.norm_id,
+             conclusion.decision.value, conclusion.on_date.isoformat(), conclusion.comment))
+        return conclusion.pk
 
-    def найтиЗаключенияРезультата(self, кодРезультата: int) -> list[ЗаключениеОДопуске]:
-        строки = self._запрос("SELECT * FROM admission_conclusions WHERE result_id = ? ORDER BY conclusion_id",
-                              (кодРезультата,))
-        return [ЗаключениеОДопуске(код=с["conclusion_id"], кодРезультата=с["result_id"],
-                                   кодПсихолога=с["psychologist_id"], кодНормы=с["norm_id"],
-                                   решение=РешениеОДопуске(с["status"]), дата=date.fromisoformat(с["date"]),
-                                   комментарий=с["comment"]) for с in строки]
+    def conclusions_for(self, result_id: int) -> list[Conclusion]:
+        lines = self._query("SELECT * FROM admission_conclusions WHERE result_id = ? ORDER BY conclusion_id",
+                              (result_id,))
+        return [Conclusion(pk=s["conclusion_id"], result_id=s["result_id"],
+                                   psychologist_id=s["psychologist_id"], norm_id=s["norm_id"],
+                                   decision=Decision(s["status"]), on_date=date.fromisoformat(s["date"]),
+                                   comment=s["comment"]) for s in lines]
 
     # ---------- отчёты ----------
-    def создатьОтчёт(self, отчёт: СводныйОтчёт) -> int:
+    def create_report(self, report: SummaryReport) -> int:
         try:
-            with self._замок, self._соединение:
-                курсор = self._соединение.execute(
+            with self._lock, self._connection:
+                cursor = self._connection.execute(
                     "INSERT INTO summary_reports(admin_id, period_start, period_end, formation_date) VALUES (?,?,?,?)",
-                    (отчёт.кодАдминистратора, отчёт.началоПериода.isoformat(),
-                     отчёт.конецПериода.isoformat(), отчёт.датаСоздания.isoformat()))
-                отчёт.код = курсор.lastrowid
-                for кодПилота in отчёт.кодыПилотов():
-                    self._соединение.execute("INSERT INTO summary_report_pilots VALUES (?,?)",
-                                             (отчёт.код, кодПилота))
-                return отчёт.код
-        except sqlite3.IntegrityError as ошибка:
-            raise ОшибкаДанных(f"Нарушено ограничение целостности: {ошибка}") from ошибка
+                    (report.admin_id, report.period_start.isoformat(),
+                     report.period_end.isoformat(), report.created_at.isoformat()))
+                report.pk = cursor.lastrowid
+                for pilot_id in report.pilot_ids():
+                    self._connection.execute("INSERT INTO summary_report_pilots VALUES (?,?)",
+                                             (report.pk, pilot_id))
+                return report.pk
+        except sqlite3.IntegrityError as error:
+            raise DataError(f"Нарушено ограничение целостности: {error}") from error
 
-    def найтиПилотовОтчёта(self, кодОтчёта: int) -> list[int]:
-        return [с["pilot_id"] for с in self._запрос(
-            "SELECT pilot_id FROM summary_report_pilots WHERE report_id = ? ORDER BY pilot_id", (кодОтчёта,))]
+    def pilots_of_report(self, report_id: int) -> list[int]:
+        return [s["pilot_id"] for s in self._query(
+            "SELECT pilot_id FROM summary_report_pilots WHERE report_id = ? ORDER BY pilot_id", (report_id,))]

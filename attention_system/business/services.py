@@ -6,89 +6,89 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from attention_system.business.entities import (
-    НормаДопуска, Пилот, РезультатТестирования, СводныйОтчёт, СессияТестирования,
-    СтрокаОтчёта, ТаблицаШульте)
-from attention_system.business.enums import РешениеОДопуске
-from attention_system.markup import стереотип
+    AdmissionNorm, Pilot, TestResult, SummaryReport, TestSession,
+    ReportLine, SchulteTable)
+from attention_system.business.enums import Decision
+from attention_system.markup import stereotype
 
 
-@стереотип("структура данных")
+@stereotype("структура данных")
 @dataclass(kw_only=True)
-class ПредварительноеЗаключение:
+class SuggestedConclusion:
     """Результат автоматического сопоставления показателей с нормами."""
-    результат: РезультатТестирования
-    норма: НормаДопуска
-    решение: РешениеОДопуске
-    вНорме: bool
+    result: TestResult
+    norm: AdmissionNorm
+    decision: Decision
+    within_norm: bool
 
 
-@стереотип("структура данных")
+@stereotype("структура данных")
 @dataclass(kw_only=True)
-class ДеталиСессии:
-    сессия: СессияТестирования
-    таблицы: list[ТаблицаШульте]
-    результат: РезультатТестирования
+class SessionDetails:
+    session: TestSession
+    tables: list[SchulteTable]
+    result: TestResult
 
 
-@стереотип("структура данных")
+@stereotype("структура данных")
 @dataclass(kw_only=True)
-class ТочкаДинамики:
-    датаВремя: datetime
-    эр: float
-    вр: float
-    пу: float
+class DynamicsPoint:
+    occurred_at: datetime
+    er: float
+    vr: float
+    pu: float
 
 
-@стереотип("структура данных")
+@stereotype("структура данных")
 @dataclass(kw_only=True)
-class ГрафикДинамики:
-    точки: list[ТочкаДинамики] = field(default_factory=list)
+class DynamicsChart:
+    points: list[DynamicsPoint] = field(default_factory=list)
 
-    def какТекст(self) -> str:
-        строки = ["Дата и время       ЭР     ВР     ПУ"]
-        for т in self.точки:
-            строки.append(f"{т.датаВремя:%Y-%m-%d %H:%M}  {т.эр:6.2f} {т.вр:6.3f} {т.пу:6.3f}")
-        return "\n".join(строки)
+    def as_text(self) -> str:
+        lines = ["Дата и время       ЭР     ВР     ПУ"]
+        for t in self.points:
+            lines.append(f"{t.occurred_at:%Y-%m-%d %H:%M}  {t.er:6.2f} {t.vr:6.3f} {t.pu:6.3f}")
+        return "\n".join(lines)
 
 
-@стереотип("служба")
-class ОценкаДопуска:
+@stereotype("служба")
+class Admission:
     @staticmethod
-    def оценить(результат: РезультатТестирования, норма: НормаДопуска) -> РешениеОДопуске:
+    def suggest(result: TestResult, norm: AdmissionNorm) -> Decision:
         """Все показатели в норме -> годен, иначе -> направление на обследование."""
-        if норма.проверитьПоказатели(результат):
-            return РешениеОДопуске.ГОДЕН
-        return РешениеОДопуске.ДОП_ОБСЛЕДОВАНИЕ
+        if norm.matches(result):
+            return Decision.FIT
+        return Decision.EXTRA_EXAM
 
 
-@стереотип("служба")
-class АнализДинамики:
+@stereotype("служба")
+class DynamicsAnalysis:
     @staticmethod
-    def построить(пары: list[tuple[СессияТестирования, РезультатТестирования]]) -> ГрафикДинамики:
-        точки = [ТочкаДинамики(датаВремя=с.датаВремя, эр=р.эр, вр=р.вр, пу=р.пу) for с, р in пары]
-        точки.sort(key=lambda т: т.датаВремя)
-        return ГрафикДинамики(точки=точки)
+    def build(pairs: list[tuple[TestSession, TestResult]]) -> DynamicsChart:
+        points = [DynamicsPoint(occurred_at=s.occurred_at, er=r.er, vr=r.vr, pu=r.pu) for s, r in pairs]
+        points.sort(key=lambda t: t.occurred_at)
+        return DynamicsChart(points=points)
 
 
-@стереотип("служба")
-class СервисОтчётов:
+@stereotype("служба")
+class ReportService:
     @staticmethod
-    def агрегировать(пилоты: list[Пилот],
-                     данные: list[tuple[СессияТестирования, РезультатТестирования]],
-                     кодАдминистратора: int, начало: date, конец: date) -> СводныйОтчёт:
-        по_пилотам: dict[int, list[РезультатТестирования]] = defaultdict(list)
-        for сессия, результат in данные:
-            по_пилотам[сессия.кодПилота].append(результат)
-        отчёт = СводныйОтчёт(кодАдминистратора=кодАдминистратора, началоПериода=начало,
-                             конецПериода=конец, датаСоздания=datetime.now())
-        for пилот in sorted(пилоты, key=lambda п: п.фио):
-            результаты = по_пилотам.get(пилот.код)
-            if not результаты:
+    def aggregate(pilots: list[Pilot],
+                     payload: list[tuple[TestSession, TestResult]],
+                     admin_id: int, start: date, end: date) -> SummaryReport:
+        by_pilot: dict[int, list[TestResult]] = defaultdict(list)
+        for session, result in payload:
+            by_pilot[session.pilot_id].append(result)
+        report = SummaryReport(admin_id=admin_id, period_start=start,
+                             period_end=end, created_at=datetime.now())
+        for pilot in sorted(pilots, key=lambda p: p.full_name):
+            results = by_pilot.get(pilot.pk)
+            if not results:
                 continue
-            n = len(результаты)
-            отчёт.добавитьСтроку(СтрокаОтчёта(
-                кодПилота=пилот.код, фио=пилот.фио, числоСессий=n,
-                срЭР=sum(р.эр for р in результаты) / n,
-                срВР=sum(р.вр for р in результаты) / n,
-                срПУ=sum(р.пу for р in результаты) / n))
-        return отчёт
+            n = len(results)
+            report.add_line(ReportLine(
+                pilot_id=pilot.pk, full_name=pilot.full_name, session_count=n,
+                avg_er=sum(r.er for r in results) / n,
+                avg_vr=sum(r.vr for r in results) / n,
+                avg_pu=sum(r.pu for r in results) / n))
+        return report

@@ -1,9 +1,9 @@
 {% extends "schulte/base.html" %}
-{% block title %}Сессия {{ session.pk }}{% endblock %}
+{% block title %}Попытка {{ attempt }}{% endblock %}
 {% block content %}
   <div class="page-head">
     <div>
-      <h1>Сессия {{ session.pk }}</h1>
+      <h1>Попытка {{ attempt }}</h1>
       <p class="lede">{{ session.pilot.display_name }} · {{ session.get_check_type_display }} · {{ session.scheduled_at|date:"Y-m-d H:i" }}</p>
     </div>
     {% if conclude %}
@@ -14,11 +14,11 @@
     <section class="panel">
       {% include "schulte/_metrics.html" %}
       {% if conclusion %}
-        <p>Заключение: <span class="badge {{ conclusion.decision_kind }}">{{ conclusion.get_decision_display }}</span></p>
+        <p>Заключение: <span class="badge {{ conclusion.decision_kind }}">{% if user.role == 'pilot' %}{{ conclusion.pilot_decision }}{% else %}{{ conclusion.get_decision_display }}{% endif %}</span></p>
       {% endif %}
     </section>
   {% else %}
-    <p class="banner warn">Результат сессии отсутствует.</p>
+    <p class="banner warn">Результат попытки отсутствует.</p>
   {% endif %}
   <div class="stack" style="margin-top:16px">
     {% for table in tables %}

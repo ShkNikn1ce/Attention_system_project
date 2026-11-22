@@ -1,0 +1,66 @@
+{% extends "schulte/base.html" %}
+{% block title %}{% if finished %}Результат наблюдений{% else %}Таблица {{ order }}{% endif %}{% endblock %}
+{% block body_class %}focus-test{% endblock %}
+{% block extra_head %}
+<style>
+  html, body.focus-test { height: 100%; margin: 0; overflow: auto; }
+  body.focus-test main {
+    position: fixed;
+    inset: 0;
+    width: auto;
+    height: auto;
+    max-width: none;
+    margin: 0;
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+  }
+  body.focus-test .observe { width: min(520px, 100%); margin: 0; text-align: center; }
+  body.focus-test .observe .time {
+    margin: 8px 0 24px;
+    font-family: var(--mono);
+    font-size: clamp(42px, 8vw, 72px);
+    letter-spacing: -0.04em;
+    line-height: 1;
+  }
+  body.focus-test .observe .times { margin: 0 0 20px; padding: 0; list-style: none; display: grid; gap: 6px; }
+  body.focus-test .observe .metrics { justify-content: center; }
+</style>
+{% endblock %}
+{% block chrome %}{% endblock %}
+{% block notices %}{% endblock %}
+{% block content %}
+  <section class="observe panel">
+    {% if finished %}
+      <h1>Результаты таблиц</h1>
+      <ul class="times">
+        {% for table in tables %}
+          <li>Таблица {{ table.order }} — <span class="num">{{ table.time_sec|floatformat:1 }} с</span></li>
+        {% endfor %}
+      </ul>
+      <h2>Результат наблюдений</h2>
+      {% if result %}
+        <div class="metrics">
+          <div class="metric"><strong>{{ result.er|floatformat:2 }}</strong><span>ЭР, эффективность</span></div>
+          <div class="metric"><strong>{{ result.vr|floatformat:3 }}</strong><span>ВР, врабатываемость</span></div>
+          <div class="metric"><strong>{{ result.pu|floatformat:3 }}</strong><span>ПУ, устойчивость</span></div>
+        </div>
+      {% endif %}
+      <form method="post" class="center-action">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="finish">
+        <button class="button-copper" type="submit">Завершить</button>
+      </form>
+    {% else %}
+      <p class="hint">Таблица {{ order }}</p>
+      <p class="time">{{ time_sec|floatformat:1 }} с</p>
+      <form method="post" class="center-action">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="next">
+        <button class="button-copper" type="submit">Перейти к таблице {{ next_order }}</button>
+      </form>
+    {% endif %}
+  </section>
+{% endblock %}

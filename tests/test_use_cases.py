@@ -3,479 +3,479 @@ import random
 import unittest
 from datetime import date, datetime, timedelta
 
-from tests.helpers import Среда
-from attention_system.application import controllers as К
-from attention_system.application import forms as Ф
-from attention_system.application.screen import Экран
-from attention_system.business.entities import НормаДопуска
+from tests.helpers import World
+from attention_system.application import controllers as ctl
+from attention_system.application import forms as ui
+from attention_system.application.screen import Screen
+from attention_system.business.entities import AdmissionNorm
 from attention_system.business.enums import (
-    РасположениеЧисел, РешениеОДопуске, Роль, СтатусСессии, ТипПроверки)
-from attention_system.business.errors import ОшибкаБлокировки, ОшибкаДоступа, ОшибкаСостояния
-from attention_system.middleware.clock import СекундомерПоСценарию
+    NumberOrder, Decision, Role, SessionStatus, CheckType)
+from attention_system.business.errors import LockoutError, AccessError, StateError
+from attention_system.middleware.clock import ScriptedClock
 
 
-def форма_входа(среда, максПопыток=3):
-    return Ф.ФормаВхода(К.КонтроллерАутентификации(среда.хранилище, максПопыток), среда.экран)
+def login_form(world, max_attempts=3):
+    return ui.LoginForm(ctl.AuthController(world.storage, max_attempts), world.screen)
 
 
-class Прецедент1_ВойтиВСистему(unittest.TestCase):
+class UseCase1Login(unittest.TestCase):
     def setUp(self):
-        self.с = Среда()
+        self.s = World()
 
-    def test_основной_поток_вход_пилота(self):
+    def test_main_flow_pilot_login(self):
         """Основной поток: верные данные открывают интерфейс роли и обновляют время входа."""
-        ф = форма_входа(self.с)
-        ф.открытьСистему()
-        self.assertTrue(ф.ввестиЛогинИПароль("pilot1", "pilot123"))
-        self.assertEqual(ф.сеанс.роль(), Роль.ПИЛОТ)
-        self.assertIn("Открыт интерфейс: пилот", self.с.экран.журнал)
-        self.assertIsNotNone(self.с.хранилище.найтиПользователяПоЛогину("pilot1").последнийВход)
+        frm = login_form(self.s)
+        frm.open_system()
+        self.assertTrue(frm.enter_credentials("pilot1", "pilot123"))
+        self.assertEqual(frm.work.role(), Role.PILOT)
+        self.assertIn("Открыт интерфейс: пилот", self.s.screen.log)
+        self.assertIsNotNone(self.s.storage.user_by_login("pilot1").last_login)
 
-    def test_основной_поток_роли_психолога_и_администратора(self):
+    def test_main_flow_staff_roles(self):
         """Основной поток: психолог и администратор получают свои интерфейсы."""
-        ф = форма_входа(self.с)
-        ф.ввестиЛогинИПароль("psy", "psy12345")
-        self.assertEqual(ф.сеанс.роль(), Роль.ПСИХОЛОГ)
-        ф.ввестиЛогинИПароль("admin", "admin123")
-        self.assertEqual(ф.сеанс.роль(), Роль.АДМИНИСТРАТОР)
+        frm = login_form(self.s)
+        frm.enter_credentials("psy", "psy12345")
+        self.assertEqual(frm.work.role(), Role.PSYCHOLOGIST)
+        frm.enter_credentials("admin", "admin123")
+        self.assertEqual(frm.work.role(), Role.ADMINISTRATOR)
 
-    def test_альтернативный_поток_неверный_пароль(self):
+    def test_alt_wrong_password(self):
         """Альтернативный поток 1: неверный пароль — сообщение об ошибке и предложение повторить ввод."""
-        ф = форма_входа(self.с)
-        self.assertFalse(ф.ввестиЛогинИПароль("pilot1", "неверный"))
-        self.assertIsNone(ф.сеанс)
-        self.assertTrue(any("Ошибка входа" in с for с in self.с.экран.журнал))
-        self.assertEqual(self.с.экран.последнее(), "Повторите ввод логина и пароля")
+        frm = login_form(self.s)
+        self.assertFalse(frm.enter_credentials("pilot1", "неверный"))
+        self.assertIsNone(frm.work)
+        self.assertTrue(any("Ошибка входа" in s for s in self.s.screen.log))
+        self.assertEqual(self.s.screen.last(), "Повторите ввод логина и пароля")
 
-    def test_альтернативный_поток_неизвестный_логин(self):
+    def test_alt_unknown_login(self):
         """Альтернативный поток 1: неизвестный логин обрабатывается как неверные данные."""
-        ф = форма_входа(self.с)
-        self.assertFalse(ф.ввестиЛогинИПароль("нет-такого", "x"))
+        frm = login_form(self.s)
+        self.assertFalse(frm.enter_credentials("нет-такого", "x"))
 
-    def test_альтернативный_поток_лимит_попыток(self):
+    def test_alt_attempt_limit(self):
         """Альтернативный поток 1: после исчерпания попыток вход блокируется даже с верным паролем."""
-        ф = форма_входа(self.с, максПопыток=3)
+        frm = login_form(self.s, max_attempts=3)
         for _ in range(3):
-            ф.ввестиЛогинИПароль("pilot1", "неверный")
-        self.assertFalse(ф.ввестиЛогинИПароль("pilot1", "pilot123"))
-        self.assertIn("Превышено число попыток входа", self.с.экран.последнее())
+            frm.enter_credentials("pilot1", "неверный")
+        self.assertFalse(frm.enter_credentials("pilot1", "pilot123"))
+        self.assertIn("Превышено число попыток входа", self.s.screen.last())
 
-    def test_успешный_вход_сбрасывает_счётчик(self):
+    def test_success_resets_counter(self):
         """Успешный вход сбрасывает счётчик неудачных попыток."""
-        ф = форма_входа(self.с, максПопыток=3)
+        frm = login_form(self.s, max_attempts=3)
         for _ in range(2):
-            ф.ввестиЛогинИПароль("pilot1", "неверный")
-        self.assertTrue(ф.ввестиЛогинИПароль("pilot1", "pilot123"))
+            frm.enter_credentials("pilot1", "неверный")
+        self.assertTrue(frm.enter_credentials("pilot1", "pilot123"))
         for _ in range(2):
-            ф.ввестиЛогинИПароль("pilot1", "неверный")
-        self.assertTrue(ф.ввестиЛогинИПароль("pilot1", "pilot123"))
+            frm.enter_credentials("pilot1", "неверный")
+        self.assertTrue(frm.enter_credentials("pilot1", "pilot123"))
 
 
-class Прецедент2_ПройтиТестированиеШульте(unittest.TestCase):
+class UseCase2Schulte(unittest.TestCase):
     def setUp(self):
-        self.с = Среда()
-        self.сессия = self.с.назначить()
+        self.s = World()
+        self.session = self.s.assign()
 
-    def форма(self, времена, пилот=None):
-        контроллер = К.КонтроллерТестирования(self.с.хранилище, self.с.сеанс(пилот or self.с.пилот), random.Random(5))
-        return Ф.ФормаТестирования(контроллер, self.с.экран, СекундомерПоСценарию(времена))
+    def form(self, times, pilot=None):
+        controller = ctl.TestingController(self.s.storage, self.s.work(pilot or self.s.pilot), random.Random(5))
+        return ui.TestingForm(controller, self.s.screen, ScriptedClock(times))
 
-    def test_основной_поток(self):
+    def test_main_flow(self):
         """Основной поток: пять таблиц пройдены, показатели рассчитаны, результат и сессия сохранены."""
-        ф = self.форма([8, 9, 8, 7, 9])
-        self.assertTrue(ф.выбратьТестирование())
-        ф.подтвердитьГотовность(3, РасположениеЧисел.ВПЕРЕМЕШКУ)
+        frm = self.form([8, 9, 8, 7, 9])
+        self.assertTrue(frm.open_testing())
+        frm.confirm_ready(3, NumberOrder.SHUFFLED)
         for _ in range(5):
-            ф.указатьЧисла()
-        р = self.с.хранилище.найтиРезультатСессии(self.сессия.код)
-        self.assertAlmostEqual(р.эр, 8.2)
-        self.assertAlmostEqual(р.вр, 8 / 8.2)
-        self.assertAlmostEqual(р.пу, 7 / 8.2)
-        self.assertEqual(self.с.хранилище.найтиСессию(self.сессия.код).статус, СтатусСессии.ЗАВЕРШЕНА)
-        self.assertEqual([т.времяСек for т in self.с.хранилище.найтиТаблицыСессии(self.сессия.код)], [8, 9, 8, 7, 9])
-        self.assertTrue(self.с.экран.последнее().startswith("Тестирование завершено"))
+            frm.enter_numbers()
+        r = self.s.storage.result_of(self.session.pk)
+        self.assertAlmostEqual(r.er, 8.2)
+        self.assertAlmostEqual(r.vr, 8 / 8.2)
+        self.assertAlmostEqual(r.pu, 7 / 8.2)
+        self.assertEqual(self.s.storage.session_by_id(self.session.pk).status, SessionStatus.COMPLETED)
+        self.assertEqual([t.time_sec for t in self.s.storage.tables_of(self.session.pk)], [8, 9, 8, 7, 9])
+        self.assertTrue(self.s.screen.last().startswith("Тестирование завершено"))
 
-    def test_таблицы_4x4_предъявляются_по_очереди(self):
+    def test_tables_4x4_shown_in_order(self):
         """Основной поток: форма последовательно показывает пять таблиц 4×4 с числами от 1 до 16."""
-        ф = self.форма([20, 18, 19, 22, 21])
-        ф.выбратьТестирование()
-        ф.подтвердитьГотовность(4, РасположениеЧисел.ВПЕРЕМЕШКУ)
+        frm = self.form([20, 18, 19, 22, 21])
+        frm.open_testing()
+        frm.confirm_ready(4, NumberOrder.SHUFFLED)
         for _ in range(5):
-            ф.указатьЧисла()
-        показ = [с for с in self.с.экран.журнал if с.startswith("Таблица")]
-        self.assertEqual(len(показ), 5)
-        self.assertTrue(all(str(n) in показ[0] for n in range(1, 17)))
+            frm.enter_numbers()
+        shown_tables = [s for s in self.s.screen.log if s.startswith("Таблица")]
+        self.assertEqual(len(shown_tables), 5)
+        self.assertTrue(all(str(n) in shown_tables[0] for n in range(1, 17)))
 
-    def test_альтернативный_поток_нет_назначенной_сессии(self):
+    def test_alt_no_assigned_session(self):
         """Альтернативный поток 1: без назначенной сессии выводится сообщение, тест не начинается."""
-        другой = self.с.новыйПилот("pilot2", "T-002", "Сидоров С.С.")
-        ф = self.форма([], пилот=другой)
-        self.assertFalse(ф.выбратьТестирование())
-        self.assertEqual(self.с.экран.последнее(), "Для вас не назначено тестирование")
+        other = self.s.new_pilot("pilot2", "T-002", "Сидоров С.С.")
+        frm = self.form([], pilot=other)
+        self.assertFalse(frm.open_testing())
+        self.assertEqual(self.s.screen.last(), "Для вас не назначено тестирование")
 
-    def test_альтернативный_поток_прерывание(self):
+    def test_alt_abort(self):
         """Альтернативный поток 2: прерывание отменяет сессию и не сохраняет результат и таблицы."""
-        ф = self.форма([5, 6])
-        ф.выбратьТестирование()
-        ф.подтвердитьГотовность()
-        ф.указатьЧисла()
-        ф.указатьЧисла()
-        ф.прерватьТестирование()
-        self.assertEqual(self.с.хранилище.найтиСессию(self.сессия.код).статус, СтатусСессии.ОТМЕНЕНА)
-        self.assertIsNone(self.с.хранилище.найтиРезультатСессии(self.сессия.код))
-        self.assertEqual(self.с.хранилище.найтиТаблицыСессии(self.сессия.код), [])
-        self.assertEqual(self.с.экран.последнее(), "Тестирование прервано, результат не сохранён")
+        frm = self.form([5, 6])
+        frm.open_testing()
+        frm.confirm_ready()
+        frm.enter_numbers()
+        frm.enter_numbers()
+        frm.abort_testing()
+        self.assertEqual(self.s.storage.session_by_id(self.session.pk).status, SessionStatus.CANCELLED)
+        self.assertIsNone(self.s.storage.result_of(self.session.pk))
+        self.assertEqual(self.s.storage.tables_of(self.session.pk), [])
+        self.assertEqual(self.s.screen.last(), "Тестирование прервано, результат не сохранён")
 
-    def test_после_прохождения_сессия_не_назначена(self):
+    def test_finished_session_is_not_assigned(self):
         """После завершения сессии повторный запуск без нового назначения невозможен."""
-        ф = self.форма([5, 5, 5, 5, 5])
-        ф.выбратьТестирование()
-        ф.подтвердитьГотовность()
+        frm = self.form([5, 5, 5, 5, 5])
+        frm.open_testing()
+        frm.confirm_ready()
         for _ in range(5):
-            ф.указатьЧисла()
-        self.assertFalse(self.форма([]).выбратьТестирование())
+            frm.enter_numbers()
+        self.assertFalse(self.form([]).open_testing())
 
-    def test_доступ_только_для_пилота(self):
+    def test_pilot_only(self):
         """Психолог не может запустить тестирование (проверка роли)."""
-        with self.assertRaises(ОшибкаДоступа):
-            К.КонтроллерТестирования(self.с.хранилище, self.с.сеанс(self.с.психолог))
+        with self.assertRaises(AccessError):
+            ctl.TestingController(self.s.storage, self.s.work(self.s.psychologist))
 
 
-class Прецедент3_ПросмотретьСвоиРезультаты(unittest.TestCase):
+class UseCase3OwnResults(unittest.TestCase):
     def setUp(self):
-        self.с = Среда()
+        self.s = World()
 
-    def форма(self, пилот=None):
-        return Ф.ФормаМоихРезультатов(К.КонтроллерРезультатовПилота(self.с.хранилище, self.с.сеанс(пилот or self.с.пилот)),
-                                      self.с.экран)
+    def form(self, pilot=None):
+        return ui.OwnResultsForm(ctl.OwnResultsController(self.s.storage, self.s.work(pilot or self.s.pilot)),
+                                      self.s.screen)
 
-    def test_основной_поток(self):
+    def test_main_flow(self):
         """Основной поток: пилот видит список своих сессий и показатели выбранной."""
-        сессия = self.с.пройти([8, 9, 8, 7, 9])
-        ф = self.форма()
-        self.assertTrue(ф.открытьМоиРезультаты())
-        ф.выбратьСессию(сессия.код)
-        self.assertEqual(self.с.экран.последнее(), "ЭР=8.20, ВР=0.976, ПУ=0.854")
+        session = self.s.finish_run([8, 9, 8, 7, 9])
+        frm = self.form()
+        self.assertTrue(frm.open_own_results())
+        frm.choose_session(session.pk)
+        self.assertEqual(self.s.screen.last(), "ЭР=8.20, ВР=0.976, ПУ=0.854")
 
-    def test_альтернативный_поток_нет_результатов(self):
+    def test_alt_no_results(self):
         """Альтернативный поток 1: нет завершённых сессий — сообщение об отсутствии результатов."""
-        self.assertFalse(self.форма().открытьМоиРезультаты())
-        self.assertEqual(self.с.экран.последнее(), "Сохранённых результатов нет")
+        self.assertFalse(self.form().open_own_results())
+        self.assertEqual(self.s.screen.last(), "Сохранённых результатов нет")
 
-    def test_чужие_результаты_недоступны(self):
+    def test_foreign_results_forbidden(self):
         """Пилот не может просмотреть результаты другого пилота."""
-        сессия = self.с.пройти([5, 5, 5, 5, 5])
-        другой = self.с.новыйПилот("pilot2", "T-002", "Сидоров С.С.")
-        with self.assertRaises(ОшибкаДоступа):
-            self.форма(другой).выбратьСессию(сессия.код)
+        session = self.s.finish_run([5, 5, 5, 5, 5])
+        other = self.s.new_pilot("pilot2", "T-002", "Сидоров С.С.")
+        with self.assertRaises(AccessError):
+            self.form(other).choose_session(session.pk)
 
 
-class Прецедент4_НазначитьТестирование(unittest.TestCase):
+class UseCase4Assign(unittest.TestCase):
     def setUp(self):
-        self.с = Среда()
+        self.s = World()
 
-    def форма(self, среда=None):
-        среда = среда or self.с
-        return Ф.ФормаНазначенияТестирования(
-            К.КонтроллерНазначения(среда.хранилище, среда.сеанс(среда.психолог), среда.уведомления), среда.экран)
+    def form(self, world=None):
+        world = world or self.s
+        return ui.AssignmentForm(
+            ctl.AssignmentController(world.storage, world.work(world.psychologist), world.notifier), world.screen)
 
-    def test_основной_поток(self):
+    def test_main_flow(self):
         """Основной поток: создаётся назначенная сессия, пилот получает уведомление."""
-        ф = self.форма()
-        self.assertTrue(ф.открытьНазначение())
-        ф.выбратьПилотаИТипПроверки(self.с.пилот.код, ТипПроверки.ПРЕДПОЛЁТНАЯ)
-        сессия = ф.подтвердитьНазначение()
-        сохранённая = self.с.хранилище.найтиСессию(сессия.код)
-        self.assertEqual(сохранённая.статус, СтатусСессии.НАЗНАЧЕНА)
-        self.assertEqual(сохранённая.типПроверки, ТипПроверки.ПРЕДПОЛЁТНАЯ)
-        self.assertEqual(сохранённая.кодПсихолога, self.с.психолог.код)
-        self.assertEqual(len(self.с.уведомления.журнал), 1)
-        self.assertIn(self.с.пилот.фио, self.с.уведомления.журнал[0])
+        frm = self.form()
+        self.assertTrue(frm.open_assignment())
+        frm.choose_pilot_and_check(self.s.pilot.pk, CheckType.PREFLIGHT)
+        session = frm.confirm_assignment()
+        saved = self.s.storage.session_by_id(session.pk)
+        self.assertEqual(saved.status, SessionStatus.ASSIGNED)
+        self.assertEqual(saved.check_type, CheckType.PREFLIGHT)
+        self.assertEqual(saved.psychologist_id, self.s.psychologist.pk)
+        self.assertEqual(len(self.s.notifier.log), 1)
+        self.assertIn(self.s.pilot.full_name, self.s.notifier.log[0])
 
-    def test_альтернативный_поток_пилоты_не_найдены(self):
+    def test_alt_pilots_not_found(self):
         """Альтернативный поток 1: в базе нет пилотов — сообщение об отсутствии пилота."""
-        пустая = Среда(спилотом=False)
-        self.assertFalse(self.форма(пустая).открытьНазначение())
-        self.assertEqual(пустая.экран.последнее(), "Пилоты в базе не найдены")
+        empty_world = World(with_pilot=False)
+        self.assertFalse(self.form(empty_world).open_assignment())
+        self.assertEqual(empty_world.screen.last(), "Пилоты в базе не найдены")
 
-    def test_альтернативный_поток_пилот_не_найден(self):
+    def test_alt_pilot_not_found(self):
         """Альтернативный поток 1: назначение несуществующему пилоту не создаёт сессию и уведомление."""
-        ф = self.форма()
-        ф.выбратьПилотаИТипПроверки(999, ТипПроверки.ПЛАНОВАЯ)
-        self.assertIsNone(ф.подтвердитьНазначение())
-        self.assertEqual(self.с.уведомления.журнал, [])
+        frm = self.form()
+        frm.choose_pilot_and_check(999, CheckType.PLANNED)
+        self.assertIsNone(frm.confirm_assignment())
+        self.assertEqual(self.s.notifier.log, [])
 
-    def test_доступ_только_для_психолога(self):
+    def test_psychologist_only(self):
         """Пилот не может назначать тестирование (проверка роли)."""
-        with self.assertRaises(ОшибкаДоступа):
-            К.КонтроллерНазначения(self.с.хранилище, self.с.сеанс(self.с.пилот), self.с.уведомления)
+        with self.assertRaises(AccessError):
+            ctl.AssignmentController(self.s.storage, self.s.work(self.s.pilot), self.s.notifier)
 
 
-class Прецедент5_ПросмотретьРезультатыТестирования(unittest.TestCase):
+class UseCase5Review(unittest.TestCase):
     def setUp(self):
-        self.с = Среда()
-        self.ф = Ф.ФормаРезультатовПилота(К.КонтроллерРезультатов(self.с.хранилище, self.с.сеанс(self.с.психолог)),
-                                          self.с.экран)
+        self.s = World()
+        self.frm = ui.ReviewForm(ctl.ReviewController(self.s.storage, self.s.work(self.s.psychologist)),
+                                          self.s.screen)
 
-    def test_основной_поток(self):
+    def test_main_flow(self):
         """Основной поток: психолог видит время каждой таблицы и показатели ЭР, ВР, ПУ."""
-        сессия = self.с.пройти([20, 18, 19, 22, 21])
-        self.assertTrue(self.ф.выбратьПилота(self.с.пилот.код))
-        self.ф.выбратьСессию(сессия.код)
-        self.assertEqual(self.с.экран.последнее(),
+        session = self.s.finish_run([20, 18, 19, 22, 21])
+        self.assertTrue(self.frm.choose_pilot(self.s.pilot.pk))
+        self.frm.choose_session(session.pk)
+        self.assertEqual(self.s.screen.last(),
                          "Время таблиц: 20.0, 18.0, 19.0, 22.0, 21.0; ЭР=20.00, ВР=1.000, ПУ=1.100")
 
-    def test_альтернативный_поток_нет_сессий(self):
+    def test_alt_no_sessions(self):
         """Альтернативный поток 1: у пилота нет завершённых сессий — сообщение."""
-        self.assertFalse(self.ф.выбратьПилота(self.с.пилот.код))
-        self.assertEqual(self.с.экран.последнее(), "У пилота нет завершённых сессий")
+        self.assertFalse(self.frm.choose_pilot(self.s.pilot.pk))
+        self.assertEqual(self.s.screen.last(), "У пилота нет завершённых сессий")
 
-    def test_нет_результата_сессии(self):
+    def test_session_has_no_result(self):
         """Запрос показателей несуществующей сессии отклоняется."""
-        from attention_system.business.errors import НетДанных
-        with self.assertRaises(НетДанных):
-            self.ф.выбратьСессию(999)
+        from attention_system.business.errors import NotFoundError
+        with self.assertRaises(NotFoundError):
+            self.frm.choose_session(999)
 
 
-class Прецедент6_СформироватьЗаключение(unittest.TestCase):
+class UseCase6Conclusion(unittest.TestCase):
     def setUp(self):
-        self.с = Среда()
+        self.s = World()
 
-    def форма(self, среда=None):
-        среда = среда or self.с
-        return Ф.ФормаЗаключения(К.КонтроллерЗаключения(среда.хранилище, среда.сеанс(среда.психолог), среда.служба), среда.экран)
+    def form(self, world=None):
+        world = world or self.s
+        return ui.ConclusionForm(ctl.ConclusionController(world.storage, world.work(world.psychologist), world.safety), world.screen)
 
-    def test_основной_поток_в_норме(self):
+    def test_main_flow_within_norm(self):
         """Основной поток: показатели в норме — заключение «годен» сохранено и передано в службу безопасности."""
-        сессия = self.с.пройти([10, 10, 10, 10, 10])
-        ф = self.форма()
-        self.assertTrue(ф.запроситьЗаключение(сессия.код))
-        заключение = ф.подтвердитьЗаключение()
-        self.assertEqual(заключение.решение, РешениеОДопуске.ГОДЕН)
-        результат = self.с.хранилище.найтиРезультатСессии(сессия.код)
-        self.assertEqual(len(self.с.хранилище.найтиЗаключенияРезультата(результат.код)), 1)
-        self.assertEqual(self.с.служба.заключения, [заключение])
+        session = self.s.finish_run([10, 10, 10, 10, 10])
+        frm = self.form()
+        self.assertTrue(frm.request_conclusion(session.pk))
+        conclusion = frm.confirm_conclusion()
+        self.assertEqual(conclusion.decision, Decision.FIT)
+        result = self.s.storage.result_of(session.pk)
+        self.assertEqual(len(self.s.storage.conclusions_for(result.pk)), 1)
+        self.assertEqual(self.s.safety.conclusions, [conclusion])
 
-    def test_альтернативный_поток_вне_нормы(self):
+    def test_alt_outside_norm(self):
         """Альтернативный поток 1: показатели вне нормы — предупреждение и направление на обследование."""
-        сессия = self.с.пройти([10, 10, 10, 14, 10])  # ПУ = 14 / 10,8 > 1,1
-        ф = self.форма()
-        ф.запроситьЗаключение(сессия.код)
-        self.assertTrue(self.с.экран.последнее().startswith("Внимание: показатели вне нормы"))
-        заключение = ф.подтвердитьЗаключение(комментарий="повторное обследование")
-        self.assertEqual(заключение.решение, РешениеОДопуске.ДОП_ОБСЛЕДОВАНИЕ)
-        self.assertEqual(self.с.служба.заключения, [заключение])
+        session = self.s.finish_run([10, 10, 10, 14, 10])  # ПУ = 14 / 10,8 > 1,1
+        frm = self.form()
+        frm.request_conclusion(session.pk)
+        self.assertTrue(self.s.screen.last().startswith("Внимание: показатели вне нормы"))
+        conclusion = frm.confirm_conclusion(comment="повторное обследование")
+        self.assertEqual(conclusion.decision, Decision.EXTRA_EXAM)
+        self.assertEqual(self.s.safety.conclusions, [conclusion])
 
-    def test_психолог_корректирует_решение(self):
+    def test_psychologist_overrides_decision(self):
         """Психолог может скорректировать предложенное заключение."""
-        сессия = self.с.пройти([10, 10, 10, 14, 10])
-        ф = self.форма()
-        ф.запроситьЗаключение(сессия.код)
-        заключение = ф.подтвердитьЗаключение(РешениеОДопуске.ГОДЕН_С_ОГРАНИЧЕНИЕМ, "допуск с ограничением")
-        self.assertEqual(заключение.решение, РешениеОДопуске.ГОДЕН_С_ОГРАНИЧЕНИЕМ)
-        self.assertEqual(заключение.комментарий, "допуск с ограничением")
+        session = self.s.finish_run([10, 10, 10, 14, 10])
+        frm = self.form()
+        frm.request_conclusion(session.pk)
+        conclusion = frm.confirm_conclusion(Decision.FIT_LIMITED, "допуск с ограничением")
+        self.assertEqual(conclusion.decision, Decision.FIT_LIMITED)
+        self.assertEqual(conclusion.comment, "допуск с ограничением")
 
-    def test_нормы_не_заданы(self):
+    def test_norms_missing(self):
         """Без заданных норм допуска заключение не формируется."""
-        среда = Среда(снормой=False)
-        сессия = среда.пройти([10, 10, 10, 10, 10])
-        ф = self.форма(среда)
-        self.assertFalse(ф.запроситьЗаключение(сессия.код))
-        self.assertEqual(среда.экран.последнее(), "Нормы допуска не заданы")
+        world = World(with_norm=False)
+        session = world.finish_run([10, 10, 10, 10, 10])
+        frm = self.form(world)
+        self.assertFalse(frm.request_conclusion(session.pk))
+        self.assertEqual(world.screen.last(), "Нормы допуска не заданы")
 
-    def test_нет_результата(self):
+    def test_no_result(self):
         """Для сессии без результата заключение не формируется."""
-        сессия = self.с.назначить()
-        self.assertFalse(self.форма().запроситьЗаключение(сессия.код))
+        session = self.s.assign()
+        self.assertFalse(self.form().request_conclusion(session.pk))
 
 
-class Прецедент7_ОтслеживатьДинамику(unittest.TestCase):
+class UseCase7Dynamics(unittest.TestCase):
     def setUp(self):
-        self.с = Среда()
-        self.ф = Ф.ФормаДинамики(К.КонтроллерДинамики(self.с.хранилище, self.с.сеанс(self.с.психолог)), self.с.экран)
+        self.s = World()
+        self.frm = ui.DynamicsForm(ctl.DynamicsController(self.s.storage, self.s.work(self.s.psychologist)), self.s.screen)
 
-    def test_основной_поток(self):
+    def test_main_flow(self):
         """Основной поток: две сессии дают график с точками, упорядоченными по дате."""
-        сейчас = datetime.now()
-        self.с.пройти([20, 18, 19, 22, 21], момент=сейчас)
-        self.с.пройти([8, 9, 8, 7, 9], момент=сейчас - timedelta(days=30))
-        self.assertTrue(self.ф.выбратьДинамикуПилота(self.с.пилот.код))
-        строки = self.с.экран.последнее().splitlines()
-        self.assertEqual(len(строки), 3)
-        self.assertIn("8.20", строки[1])
-        self.assertIn("20.00", строки[2])
+        now = datetime.now()
+        self.s.finish_run([20, 18, 19, 22, 21], moment=now)
+        self.s.finish_run([8, 9, 8, 7, 9], moment=now - timedelta(days=30))
+        self.assertTrue(self.frm.open_dynamics(self.s.pilot.pk))
+        lines = self.s.screen.last().splitlines()
+        self.assertEqual(len(lines), 3)
+        self.assertIn("8.20", lines[1])
+        self.assertIn("20.00", lines[2])
 
-    def test_альтернативный_поток_одна_сессия(self):
+    def test_alt_single_session(self):
         """Альтернативный поток 1: меньше двух сессий — сообщение о недостатке данных."""
-        self.с.пройти([8, 9, 8, 7, 9])
-        self.assertFalse(self.ф.выбратьДинамикуПилота(self.с.пилот.код))
-        self.assertIn("Недостаточно данных", self.с.экран.последнее())
+        self.s.finish_run([8, 9, 8, 7, 9])
+        self.assertFalse(self.frm.open_dynamics(self.s.pilot.pk))
+        self.assertIn("Недостаточно данных", self.s.screen.last())
 
-    def test_пилот_не_найден(self):
+    def test_pilot_not_found(self):
         """Динамика несуществующего пилота не строится."""
-        self.assertFalse(self.ф.выбратьДинамикуПилота(999))
+        self.assertFalse(self.frm.open_dynamics(999))
 
 
-class Прецедент8_ВестиДанныеОПилотах(unittest.TestCase):
+class UseCase8Pilots(unittest.TestCase):
     def setUp(self):
-        self.с = Среда(спилотом=False)
-        self.ф = Ф.ФормаДанныхПилотов(К.КонтроллерДанныхПилотов(self.с.хранилище, self.с.сеанс(self.с.админ)), self.с.экран)
-        self.данные = К.ДанныеПилота(логин="pilot9", пароль="secret99", фио="Орлов О.О.", табельныйНомер="T-009", должность="КВС")
+        self.s = World(with_pilot=False)
+        self.frm = ui.PilotAdminForm(ctl.PilotAdminController(self.s.storage, self.s.work(self.s.admin_user)), self.s.screen)
+        self.payload = ctl.PilotData(login="pilot9", password="secret99", full_name="Орлов О.О.", employee_number="T-009", position="КВС")
 
-    def test_добавление(self):
+    def test_create(self):
         """Основной поток: пилот добавлен, пароль хранится в виде хэша, вход возможен."""
-        self.assertTrue(self.ф.ввестиДанныеПилота(self.данные))
-        п = self.с.хранилище.найтиПользователяПоЛогину("pilot9")
-        self.assertNotIn("secret99", п.хэшПароля)
-        self.assertTrue(п.проверитьПароль("secret99"))
-        self.assertEqual(self.с.экран.последнее(), "Пилот добавлен")
+        self.assertTrue(self.frm.enter_pilot(self.payload))
+        p = self.s.storage.user_by_login("pilot9")
+        self.assertNotIn("secret99", p.password_hash)
+        self.assertTrue(p.check_password("secret99"))
+        self.assertEqual(self.s.screen.last(), "Пилот добавлен")
 
-    def test_изменение(self):
+    def test_update(self):
         """Подчинённый поток: данные пилота изменены и сохранены."""
-        self.ф.ввестиДанныеПилота(self.данные)
-        код = self.с.хранилище.найтиПользователяПоЛогину("pilot9").код
-        новые = К.ДанныеПилота(логин="pilot9", пароль="", фио="Орлов О.О.", табельныйНомер="T-009", должность="Второй пилот")
-        self.assertTrue(self.ф.ввестиНовыеДанные(код, новые))
-        п = self.с.хранилище.найтиПилота(код)
-        self.assertEqual(п.должность, "Второй пилот")
-        self.assertTrue(п.проверитьПароль("secret99"))  # пустой пароль — прежний сохраняется
+        self.frm.enter_pilot(self.payload)
+        pk = self.s.storage.user_by_login("pilot9").pk
+        updated = ctl.PilotData(login="pilot9", password="", full_name="Орлов О.О.", employee_number="T-009", position="Второй пилот")
+        self.assertTrue(self.frm.enter_update(pk, updated))
+        p = self.s.storage.pilot_by_id(pk)
+        self.assertEqual(p.position, "Второй пилот")
+        self.assertTrue(p.check_password("secret99"))  # пустой пароль — прежний сохраняется
 
-    def test_удаление(self):
+    def test_delete(self):
         """Подчинённый поток: пилот без сессий удалён."""
-        self.ф.ввестиДанныеПилота(self.данные)
-        код = self.с.хранилище.найтиПользователяПоЛогину("pilot9").код
-        self.assertTrue(self.ф.удалитьПилота(код))
-        self.assertIsNone(self.с.хранилище.найтиПилота(код))
+        self.frm.enter_pilot(self.payload)
+        pk = self.s.storage.user_by_login("pilot9").pk
+        self.assertTrue(self.frm.delete_pilot(pk))
+        self.assertIsNone(self.s.storage.pilot_by_id(pk))
 
-    def test_удаление_пилота_с_сессиями_запрещено(self):
+    def test_delete_pilot_with_sessions_blocked(self):
         """Пилота с сессиями тестирования удалить нельзя."""
-        self.ф.ввестиДанныеПилота(self.данные)
-        пилот = self.с.хранилище.найтиПользователяПоЛогину("pilot9")
-        self.с.назначить(пилот)
-        self.assertFalse(self.ф.удалитьПилота(пилот.код))
-        self.assertIsNotNone(self.с.хранилище.найтиПилота(пилот.код))
+        self.frm.enter_pilot(self.payload)
+        pilot = self.s.storage.user_by_login("pilot9")
+        self.s.assign(pilot)
+        self.assertFalse(self.frm.delete_pilot(pilot.pk))
+        self.assertIsNotNone(self.s.storage.pilot_by_id(pilot.pk))
 
-    def test_альтернативный_поток_пустое_фио(self):
+    def test_alt_empty_name(self):
         """Альтернативный поток 1: пустое ФИО — ошибка и просьба повторить ввод."""
-        self.данные.фио = " "
-        self.assertFalse(self.ф.ввестиДанныеПилота(self.данные))
-        self.assertEqual(self.с.экран.последнее(), "Исправьте данные и повторите ввод")
+        self.payload.full_name = " "
+        self.assertFalse(self.frm.enter_pilot(self.payload))
+        self.assertEqual(self.s.screen.last(), "Исправьте данные и повторите ввод")
 
-    def test_альтернативный_поток_короткий_пароль(self):
+    def test_alt_short_password(self):
         """Альтернативный поток 1: пароль короче шести символов отклоняется."""
-        self.данные.пароль = "123"
-        self.assertFalse(self.ф.ввестиДанныеПилота(self.данные))
-        self.assertEqual(self.с.хранилище.найтиПилотов(), [])
+        self.payload.password = "123"
+        self.assertFalse(self.frm.enter_pilot(self.payload))
+        self.assertEqual(self.s.storage.all_pilots(), [])
 
-    def test_альтернативный_поток_дубль_табельного_номера(self):
+    def test_alt_duplicate_employee_number(self):
         """Альтернативный поток 1: повторный табельный номер отклоняется, пилот не добавляется."""
-        self.ф.ввестиДанныеПилота(self.данные)
-        повтор = К.ДанныеПилота(логин="pilot10", пароль="secret99", фио="Другой Д.Д.", табельныйНомер="T-009")
-        self.assertFalse(self.ф.ввестиДанныеПилота(повтор))
-        self.assertEqual(len(self.с.хранилище.найтиПилотов()), 1)
+        self.frm.enter_pilot(self.payload)
+        again = ctl.PilotData(login="pilot10", password="secret99", full_name="Другой Д.Д.", employee_number="T-009")
+        self.assertFalse(self.frm.enter_pilot(again))
+        self.assertEqual(len(self.s.storage.all_pilots()), 1)
 
-    def test_доступ_только_для_администратора(self):
+    def test_admin_only(self):
         """Психолог не может изменять данные пилотов (проверка роли)."""
-        with self.assertRaises(ОшибкаДоступа):
-            К.КонтроллерДанныхПилотов(self.с.хранилище, self.с.сеанс(self.с.психолог))
+        with self.assertRaises(AccessError):
+            ctl.PilotAdminController(self.s.storage, self.s.work(self.s.psychologist))
 
 
-class Прецедент9_НастроитьНормыДопуска(unittest.TestCase):
+class UseCase9Norms(unittest.TestCase):
     def setUp(self):
-        self.с = Среда(снормой=False)
-        self.ф = Ф.ФормаНормДопуска(К.КонтроллерНорм(self.с.хранилище, self.с.сеанс(self.с.админ)), self.с.экран)
+        self.s = World(with_norm=False)
+        self.frm = ui.NormForm(ctl.NormController(self.s.storage, self.s.work(self.s.admin_user)), self.s.screen)
 
-    def значения(self, **изменения):
-        параметры = dict(эрМин=3, эрМакс=25, врМин=0.8, врМакс=1.1, пуМин=0.8, пуМакс=1.1)
-        параметры.update(изменения)
-        return НормаДопуска(**параметры)
+    def values(self, **overrides):
+        params = dict(er_min=3, er_max=25, vr_min=0.8, vr_max=1.1, pu_min=0.8, pu_max=1.1)
+        params.update(overrides)
+        return AdmissionNorm(**params)
 
-    def test_нет_норм(self):
+    def test_no_norms(self):
         """Если нормы ещё не заданы, форма сообщает об этом."""
-        self.ф.открытьНормы()
-        self.assertEqual(self.с.экран.последнее(), "Нормы допуска ещё не заданы")
+        self.frm.open_norms()
+        self.assertEqual(self.s.screen.last(), "Нормы допуска ещё не заданы")
 
-    def test_основной_поток_первая_норма(self):
+    def test_main_flow_first_norm(self):
         """Основной поток: первая норма сохраняется и отображается."""
-        self.assertTrue(self.ф.изменитьЗначения(self.значения()))
-        self.ф.открытьНормы()
-        self.assertEqual(self.с.экран.последнее(), "ЭР 3.0–25.0; ВР 0.8–1.1; ПУ 0.8–1.1")
+        self.assertTrue(self.frm.change_values(self.values()))
+        self.frm.open_norms()
+        self.assertEqual(self.s.screen.last(), "ЭР 3.0–25.0; ВР 0.8–1.1; ПУ 0.8–1.1")
 
-    def test_неиспользованная_норма_обновляется(self):
+    def test_unused_norm_is_updated(self):
         """Норма, не применявшаяся в заключениях, обновляется на месте."""
-        self.ф.изменитьЗначения(self.значения())
-        первая = self.с.хранилище.найтиДействующуюНорму().код
-        self.ф.изменитьЗначения(self.значения(эрМакс=30))
-        действующая = self.с.хранилище.найтиДействующуюНорму()
-        self.assertEqual(действующая.код, первая)
-        self.assertEqual(действующая.эрМакс, 30)
+        self.frm.change_values(self.values())
+        first_id = self.s.storage.current_norm_row().pk
+        self.frm.change_values(self.values(er_max=30))
+        current_norm = self.s.storage.current_norm_row()
+        self.assertEqual(current_norm.pk, first_id)
+        self.assertEqual(current_norm.er_max, 30)
 
-    def test_использованная_норма_версионируется(self):
+    def test_used_norm_is_versioned(self):
         """Норма, применённая в заключении, не меняется: создаётся новая версия."""
-        self.ф.изменитьЗначения(self.значения())
-        норма = self.с.хранилище.найтиДействующуюНорму()
-        сессия = self.с.пройти([10, 10, 10, 10, 10])
-        форма = Ф.ФормаЗаключения(К.КонтроллерЗаключения(self.с.хранилище, self.с.сеанс(self.с.психолог), self.с.служба),
-                                  self.с.экран)
-        форма.запроситьЗаключение(сессия.код)
-        форма.подтвердитьЗаключение()
-        self.ф.изменитьЗначения(self.значения(эрМакс=40))
-        новая = self.с.хранилище.найтиДействующуюНорму()
-        self.assertNotEqual(новая.код, норма.код)
-        self.assertEqual(новая.эрМакс, 40)
+        self.frm.change_values(self.values())
+        norm = self.s.storage.current_norm_row()
+        session = self.s.finish_run([10, 10, 10, 10, 10])
+        form = ui.ConclusionForm(ctl.ConclusionController(self.s.storage, self.s.work(self.s.psychologist), self.s.safety),
+                                  self.s.screen)
+        form.request_conclusion(session.pk)
+        form.confirm_conclusion()
+        self.frm.change_values(self.values(er_max=40))
+        fresh = self.s.storage.current_norm_row()
+        self.assertNotEqual(fresh.pk, norm.pk)
+        self.assertEqual(fresh.er_max, 40)
 
-    def test_альтернативный_поток_неверный_диапазон(self):
+    def test_alt_bad_range(self):
         """Альтернативный поток 1: нижняя граница больше верхней — ошибка, нормы не меняются."""
-        self.ф.изменитьЗначения(self.значения())
-        self.assertFalse(self.ф.изменитьЗначения(self.значения(врМин=1.5)))
-        self.assertIn("Диапазон ВР", self.с.экран.последнее())
-        self.assertEqual(self.с.хранилище.найтиДействующуюНорму().врМин, 0.8)
+        self.frm.change_values(self.values())
+        self.assertFalse(self.frm.change_values(self.values(vr_min=1.5)))
+        self.assertIn("Диапазон ВР", self.s.screen.last())
+        self.assertEqual(self.s.storage.current_norm_row().vr_min, 0.8)
 
 
-class Прецедент10_ФормироватьСводныйОтчёт(unittest.TestCase):
+class UseCase10Report(unittest.TestCase):
     def setUp(self):
-        self.с = Среда()
-        self.ф = Ф.ФормаСводногоОтчёта(К.КонтроллерОтчётов(self.с.хранилище, self.с.сеанс(self.с.админ), self.с.служба),
-                                       self.с.экран)
+        self.s = World()
+        self.frm = ui.ReportForm(ctl.ReportController(self.s.storage, self.s.work(self.s.admin_user), self.s.safety),
+                                       self.s.screen)
 
-    def test_основной_поток(self):
+    def test_main_flow(self):
         """Основной поток: отчёт по группе сформирован, сохранён и передан в службу безопасности."""
-        self.с.пройти([8, 9, 8, 7, 9])
-        self.с.пройти([20, 18, 19, 22, 21])
-        self.assertTrue(self.ф.указатьПериодИГруппу(date(2000, 1, 1), date.today() + timedelta(days=1), [self.с.пилот.код]))
-        отчёт = self.с.служба.отчёты[0]
-        self.assertEqual(len(отчёт.строки), 1)
-        self.assertEqual(отчёт.строки[0].числоСессий, 2)
-        self.assertAlmostEqual(отчёт.строки[0].срЭР, (8.2 + 20.0) / 2)
-        self.assertEqual(self.с.хранилище.найтиПилотовОтчёта(отчёт.код), [self.с.пилот.код])
+        self.s.finish_run([8, 9, 8, 7, 9])
+        self.s.finish_run([20, 18, 19, 22, 21])
+        self.assertTrue(self.frm.set_period_and_group(date(2000, 1, 1), date.today() + timedelta(days=1), [self.s.pilot.pk]))
+        report = self.s.safety.reports[0]
+        self.assertEqual(len(report.lines), 1)
+        self.assertEqual(report.lines[0].session_count, 2)
+        self.assertAlmostEqual(report.lines[0].avg_er, (8.2 + 20.0) / 2)
+        self.assertEqual(self.s.storage.pilots_of_report(report.pk), [self.s.pilot.pk])
 
-    def test_в_отчёт_входят_только_пилоты_группы(self):
+    def test_report_includes_only_group(self):
         """Пилоты вне выбранной группы в отчёт не попадают."""
-        другой = self.с.новыйПилот("pilot2", "T-002", "Сидоров С.С.")
-        self.с.пройти([5, 5, 5, 5, 5])
-        self.с.пройти([6, 6, 6, 6, 6], пилот=другой)
-        self.ф.указатьПериодИГруппу(date(2000, 1, 1), date.today() + timedelta(days=1), [другой.код])
-        self.assertEqual([с.кодПилота for с in self.с.служба.отчёты[0].строки], [другой.код])
+        other = self.s.new_pilot("pilot2", "T-002", "Сидоров С.С.")
+        self.s.finish_run([5, 5, 5, 5, 5])
+        self.s.finish_run([6, 6, 6, 6, 6], pilot=other)
+        self.frm.set_period_and_group(date(2000, 1, 1), date.today() + timedelta(days=1), [other.pk])
+        self.assertEqual([s.pilot_id for s in self.s.safety.reports[0].lines], [other.pk])
 
-    def test_альтернативный_поток_нет_данных(self):
+    def test_alt_no_data(self):
         """Альтернативный поток 1: нет данных за период — сообщение, отчёт не создаётся."""
-        self.assertFalse(self.ф.указатьПериодИГруппу(date(2000, 1, 1), date.today(), [self.с.пилот.код]))
-        self.assertEqual(self.с.экран.последнее(), "Нет данных за указанный период")
-        self.assertEqual(self.с.служба.отчёты, [])
+        self.assertFalse(self.frm.set_period_and_group(date(2000, 1, 1), date.today(), [self.s.pilot.pk]))
+        self.assertEqual(self.s.screen.last(), "Нет данных за указанный период")
+        self.assertEqual(self.s.safety.reports, [])
 
-    def test_период_за_пределами_данных(self):
+    def test_period_outside_data(self):
         """Сессии вне указанного периода в отчёт не включаются."""
-        self.с.пройти([5, 5, 5, 5, 5], момент=datetime(2020, 1, 15))
-        self.assertFalse(self.ф.указатьПериодИГруппу(date(2021, 1, 1), date(2021, 12, 31), [self.с.пилот.код]))
+        self.s.finish_run([5, 5, 5, 5, 5], moment=datetime(2020, 1, 15))
+        self.assertFalse(self.frm.set_period_and_group(date(2021, 1, 1), date(2021, 12, 31), [self.s.pilot.pk]))
 
-    def test_начало_позже_конца(self):
+    def test_start_after_end(self):
         """Период с началом позже конца отклоняется."""
-        self.assertFalse(self.ф.указатьПериодИГруппу(date(2026, 5, 2), date(2026, 5, 1), [self.с.пилот.код]))
+        self.assertFalse(self.frm.set_period_and_group(date(2026, 5, 2), date(2026, 5, 1), [self.s.pilot.pk]))
 
-    def test_доступ_только_для_администратора(self):
+    def test_admin_only(self):
         """Пилот не может формировать сводный отчёт (проверка роли)."""
-        with self.assertRaises(ОшибкаДоступа):
-            К.КонтроллерОтчётов(self.с.хранилище, self.с.сеанс(self.с.пилот), self.с.служба)
+        with self.assertRaises(AccessError):
+            ctl.ReportController(self.s.storage, self.s.work(self.s.pilot), self.s.safety)
 
 
 if __name__ == "__main__":

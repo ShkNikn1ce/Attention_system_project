@@ -2,43 +2,43 @@
 import random
 import unittest
 
-from tests.helpers import Среда
-from attention_system.application import controllers as К
-from attention_system.application import forms as Ф
-from attention_system.application.screen import Экран
-from attention_system.application.server import СерверПриложения
-from attention_system.business.enums import СтатусСессии
-from attention_system.middleware.clock import СекундомерПоСценарию
+from tests.helpers import World
+from attention_system.application import controllers as ctl
+from attention_system.application import forms as ui
+from attention_system.application.screen import Screen
+from attention_system.application.server import AppServer
+from attention_system.business.enums import SessionStatus
+from attention_system.middleware.clock import ScriptedClock
 
 
-class ТестПараллельногоТестирования(unittest.TestCase):
-    def test_пятьдесят_пилотов_одновременно(self):
+class ParallelTestingTests(unittest.TestCase):
+    def test_fifty_pilots_at_once(self):
         """50 пилотов одновременно проходят тестирование: все результаты сохранены без искажений."""
-        среда = Среда(спилотом=False)
-        пилоты = [среда.новыйПилот(f"p{i}", f"N-{i}", f"Пилот {i}") for i in range(50)]
-        сессии = {п.код: среда.назначить(п) for п in пилоты}
-        сервер = СерверПриложения(максПотоков=50)
+        world = World(with_pilot=False)
+        pilots = [world.new_pilot(f"p{i}", f"N-{i}", f"Пилот {i}") for i in range(50)]
+        sessions = {p.pk: world.assign(p) for p in pilots}
+        server = AppServer(max_workers=50)
 
-        def задача(пилот):
-            форма = Ф.ФормаТестирования(
-                К.КонтроллерТестирования(среда.хранилище, среда.сеанс(пилот), random.Random(пилот.код)),
-                Экран(), СекундомерПоСценарию([10, 10, 10, 10, 10]))
-            форма.выбратьТестирование()
-            форма.подтвердитьГотовность()
+        def task(pilot):
+            form = ui.TestingForm(
+                ctl.TestingController(world.storage, world.work(pilot), random.Random(pilot.pk)),
+                Screen(), ScriptedClock([10, 10, 10, 10, 10]))
+            form.open_testing()
+            form.confirm_ready()
             for _ in range(5):
-                форма.указатьЧисла()
-            return форма.результат
+                form.enter_numbers()
+            return form.result
 
-        задания = [сервер.выполнить(lambda п=п: задача(п)) for п in пилоты]
-        результаты = [з.result(timeout=60) for з in задания]
-        сервер.остановить()
-        self.assertEqual(len(результаты), 50)
-        for п in пилоты:
-            сессия = среда.хранилище.найтиСессию(сессии[п.код].код)
-            self.assertEqual(сессия.статус, СтатусСессии.ЗАВЕРШЕНА)
-            р = среда.хранилище.найтиРезультатСессии(сессия.код)
-            self.assertAlmostEqual(р.эр, 10.0)
-            self.assertEqual(len(среда.хранилище.найтиТаблицыСессии(сессия.код)), 5)
+        jobs = [server.submit(lambda p=p: task(p)) for p in pilots]
+        results = [job.result(timeout=60) for job in jobs]
+        server.stop()
+        self.assertEqual(len(results), 50)
+        for p in pilots:
+            session = world.storage.session_by_id(sessions[p.pk].pk)
+            self.assertEqual(session.status, SessionStatus.COMPLETED)
+            r = world.storage.result_of(session.pk)
+            self.assertAlmostEqual(r.er, 10.0)
+            self.assertEqual(len(world.storage.tables_of(session.pk)), 5)
 
 
 if __name__ == "__main__":

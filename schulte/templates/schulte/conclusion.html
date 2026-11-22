@@ -2,14 +2,14 @@
 {% block title %}Заключение{% endblock %}
 {% block content %}
   <h1>Заключение о допуске</h1>
-  <p class="lede">{{ session.pilot.display_name }}, сессия {{ session.pk }} от {{ session.scheduled_at|date:"Y-m-d H:i" }}.</p>
+  <p class="lede">{{ session.pilot.display_name }}, попытка {{ attempt }} от {{ session.scheduled_at|date:"Y-m-d H:i" }}.</p>
   <section class="panel">
     {% include "schulte/_metrics.html" %}
     <p>Норма: {{ norm }}</p>
     {% if in_norm %}
-      <p class="banner ok">Предлагается заключение: {{ suggestion_label|lower }}</p>
+      <p class="banner ok">Рекомендация: {{ suggestion_label|lower }}</p>
     {% else %}
-      <p class="banner bad">Внимание: показатели вне нормы. Предлагается: {{ suggestion_label|lower }}</p>
+      <p class="banner bad">Внимание: показатели вне нормы. Рекомендация: {{ suggestion_label|lower }}</p>
     {% endif %}
     {% if existing %}
       <p>Заключение сохранено и передано в службу безопасности: <span class="badge {{ existing.decision_kind }}">{{ existing.get_decision_display }}</span></p>

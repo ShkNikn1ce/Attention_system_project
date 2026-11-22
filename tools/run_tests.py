@@ -7,24 +7,24 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 
-class Сбор(unittest.TextTestResult):
-    записи = []
+class CollectingResult(unittest.TextTestResult):
+    rows_out = []
 
-    def _записать(self, тест, статус):
-        Сбор.записи.append({"модуль": тест.__class__.__module__.split(".")[-1], "класс": тест.__class__.__name__,
-                            "имя": тест._testMethodName, "описание": (тест.shortDescription() or ""), "статус": статус})
+    def _record(self, test, status):
+        CollectingResult.rows_out.append({"модуль": test.__class__.__module__.split(".")[-1], "класс": test.__class__.__name__,
+                            "имя": test._testMethodName, "описание": (test.shortDescription() or ""), "статус": status})
 
-    def addSuccess(self, тест):
-        super().addSuccess(тест); self._записать(тест, "пройден")
+    def addSuccess(self, test):
+        super().addSuccess(test); self._record(test, "пройден")
 
-    def addFailure(self, тест, err):
-        super().addFailure(тест, err); self._записать(тест, "НЕ ПРОЙДЕН")
+    def addFailure(self, test, err):
+        super().addFailure(test, err); self._record(test, "НЕ ПРОЙДЕН")
 
-    def addError(self, тест, err):
-        super().addError(тест, err); self._записать(тест, "ОШИБКА")
+    def addError(self, test, err):
+        super().addError(test, err); self._record(test, "ОШИБКА")
 
 
-набор = unittest.defaultTestLoader.discover("tests", top_level_dir=".")
-итог = unittest.TextTestRunner(resultclass=Сбор, verbosity=0).run(набор)
-pathlib.Path("diagrams/test_results.json").write_text(json.dumps(Сбор.записи, ensure_ascii=False, indent=1), encoding="utf-8")
-print("всего:", итог.testsRun, "ошибок:", len(итог.errors), "падений:", len(итог.failures))
+suite = unittest.defaultTestLoader.discover("tests", top_level_dir=".")
+outcome = unittest.TextTestRunner(resultclass=CollectingResult, verbosity=0).run(suite)
+pathlib.Path("diagrams/test_results.json").write_text(json.dumps(CollectingResult.rows_out, ensure_ascii=False, indent=1), encoding="utf-8")
+print("всего:", outcome.testsRun, "ошибок:", len(outcome.errors), "падений:", len(outcome.failures))

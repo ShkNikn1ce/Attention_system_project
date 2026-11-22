@@ -60,6 +60,7 @@ a { color: inherit; }
   letter-spacing: 0.04em;
 }
 .brand strong { display: block; font-size: 18px; }
+.brand .brand-name { font-size: 15px; line-height: 1.25; }
 .brand small, .muted, .side-user small { color: #c9beb0; }
 .side nav { display: flex; flex-direction: column; gap: 4px; }
 .side nav a {
@@ -155,6 +156,18 @@ textarea.input { resize: vertical; }
 }
 .button-bad { background: var(--bad); }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.center-action { margin: 0; text-align: center; }
+.observe { text-align: center; }
+.observe .time {
+  margin: 8px 0 24px;
+  font-family: var(--mono);
+  font-size: clamp(42px, 8vw, 72px);
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+.observe .times { margin: 0 0 20px; padding: 0; list-style: none; display: grid; gap: 6px; }
+.observe .metrics { justify-content: center; }
+.observe form { margin-top: 20px; }
 
 .banner {
   list-style: none;
@@ -164,6 +177,7 @@ textarea.input { resize: vertical; }
   background: var(--info-bg);
 }
 .messages { margin: 0 0 16px; padding: 0; }
+.messages:not(:has(li)) { display: none; }
 .banner.success, .banner.ok { background: var(--ok-bg); color: var(--ok); }
 .banner.error, .banner.bad { background: var(--bad-bg); color: var(--bad); }
 .banner.warning, .banner.warn { background: var(--warn-bg); color: var(--warn); }
@@ -202,6 +216,28 @@ th { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: 
   width: min(100%, calc(var(--n) * 104px));
   margin: 12px 0 18px;
 }
+html:has(body.focus-test),
+body.focus-test {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+body.focus-test main {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+body.focus-test .schulte {
+  margin: 0;
+  width: min(86vmin, calc(100vh - 48px), calc(100vw - 48px), calc(var(--n) * 112px));
+}
 .cell, .schulte span {
   aspect-ratio: 1;
   border: 1px solid #ddcfb8;
@@ -223,7 +259,12 @@ th { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: 
 .hint { font-size: 18px; margin: 0; }
 .charts { display: grid; gap: 12px; }
 .chart { width: 100%; height: auto; background: white; border-radius: 12px; border: 1px solid var(--line); }
-.chart polyline { fill: none; stroke: var(--copper); stroke-width: 3; }
+.chart polyline { fill: none; stroke: var(--copper); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+.chart .grid { stroke: #efe6d8; stroke-width: 1; }
+.chart .axis { stroke: #b7aa98; stroke-width: 1.5; }
+.chart .point { fill: var(--copper); stroke: white; stroke-width: 2; }
+.chart .tick { font-size: 13px; fill: var(--muted); font-family: var(--sans); }
+.chart .axis-title { font-size: 14px; fill: var(--ink); font-family: var(--sans); }
 .demo {
   margin-top: 16px;
   color: var(--muted);
@@ -245,4 +286,12 @@ th { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: 
   main { padding: 20px 16px 48px; }
   .grid-2, .cards { grid-template-columns: 1fr; }
   h1 { font-size: 26px; }
+  body.focus-test main {
+    position: fixed;
+    inset: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }

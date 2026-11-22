@@ -3,139 +3,139 @@ import threading
 import unittest
 from datetime import date, datetime
 
-from tests.helpers import Среда
+from tests.helpers import World
 from attention_system.business.entities import (
-    ЗаключениеОДопуске, Пилот, РезультатТестирования, СводныйОтчёт, ТаблицаШульте)
-from attention_system.business.enums import РасположениеЧисел, РешениеОДопуске, СтатусСессии
-from attention_system.business.errors import ОшибкаДанных, ОшибкаСостояния
-from attention_system.middleware.password import ХэшПароля
+    Conclusion, Pilot, TestResult, SummaryReport, SchulteTable)
+from attention_system.business.enums import NumberOrder, Decision, SessionStatus
+from attention_system.business.errors import DataError, StateError
+from attention_system.middleware.password import PasswordHash
 
 
-class ТестХранилища(unittest.TestCase):
+class StorageTests(unittest.TestCase):
     def setUp(self):
-        self.с = Среда()
-        self.х = self.с.хранилище
+        self.s = World()
+        self.db = self.s.storage
 
-    def test_поиск_пользователя_возвращает_подкласс(self):
+    def test_lookup_returns_subclass(self):
         """Поиск по логину возвращает объект подкласса с данными профиля."""
-        п = self.х.найтиПользователяПоЛогину("pilot1")
-        self.assertIsInstance(п, Пилот)
-        self.assertEqual(п.табельныйНомер, "T-001")
-        self.assertIsNone(self.х.найтиПользователяПоЛогину("нет-такого"))
+        p = self.db.user_by_login("pilot1")
+        self.assertIsInstance(p, Pilot)
+        self.assertEqual(p.employee_number, "T-001")
+        self.assertIsNone(self.db.user_by_login("нет-такого"))
 
-    def test_дубль_логина(self):
+    def test_duplicate_login(self):
         """Повторный логин отклоняется, частично созданная запись откатывается."""
-        до = len(self.х.найтиПилотов())
-        with self.assertRaises(ОшибкаДанных):
-            self.с.новыйПилот("pilot1", "T-777", "Другой Д.Д.")
-        self.assertEqual(len(self.х.найтиПилотов()), до)
+        before = len(self.db.all_pilots())
+        with self.assertRaises(DataError):
+            self.s.new_pilot("pilot1", "T-777", "Другой Д.Д.")
+        self.assertEqual(len(self.db.all_pilots()), before)
 
-    def test_дубль_табельного_номера(self):
+    def test_duplicate_employee_number(self):
         """Повторный табельный номер отклоняется, учётная запись не остаётся «висеть»."""
-        with self.assertRaises(ОшибкаДанных):
-            self.с.новыйПилот("pilot2", "T-001", "Другой Д.Д.")
-        self.assertIsNone(self.х.найтиПользователяПоЛогину("pilot2"))
+        with self.assertRaises(DataError):
+            self.s.new_pilot("pilot2", "T-001", "Другой Д.Д.")
+        self.assertIsNone(self.db.user_by_login("pilot2"))
 
-    def test_обновление_пилота(self):
+    def test_update_pilot(self):
         """Изменения профиля пилота сохраняются."""
-        п = self.х.найтиПилота(self.с.пилот.код)
-        п.должность = "Второй пилот"
-        self.х.обновитьПилота(п)
-        self.assertEqual(self.х.найтиПилота(п.код).должность, "Второй пилот")
+        p = self.db.pilot_by_id(self.s.pilot.pk)
+        p.position = "Второй пилот"
+        self.db.save_pilot(p)
+        self.assertEqual(self.db.pilot_by_id(p.pk).position, "Второй пилот")
 
-    def test_удаление_пилота_без_сессий(self):
+    def test_delete_pilot_without_sessions(self):
         """Пилот без связанных записей удаляется вместе с учётной записью."""
-        п = self.с.новыйПилот("temp", "T-900", "Временный В.В.")
-        self.х.удалитьПилота(п.код)
-        self.assertIsNone(self.х.найтиПилота(п.код))
-        self.assertIsNone(self.х.найтиПользователяПоЛогину("temp"))
+        p = self.s.new_pilot("temp", "T-900", "Временный В.В.")
+        self.db.delete_pilot(p.pk)
+        self.assertIsNone(self.db.pilot_by_id(p.pk))
+        self.assertIsNone(self.db.user_by_login("temp"))
 
-    def test_удаление_пилота_с_сессией_запрещено(self):
+    def test_delete_pilot_with_session_blocked(self):
         """Внешний ключ не даёт удалить пилота, у которого есть сессии."""
-        self.с.назначить()
-        with self.assertRaises(ОшибкаСостояния):
-            self.х.удалитьПилота(self.с.пилот.код)
-        self.assertIsNotNone(self.х.найтиПилота(self.с.пилот.код))
+        self.s.assign()
+        with self.assertRaises(StateError):
+            self.db.delete_pilot(self.s.pilot.pk)
+        self.assertIsNotNone(self.db.pilot_by_id(self.s.pilot.pk))
 
-    def test_назначенная_сессия_ищется_по_пилоту(self):
+    def test_assigned_session_found_by_pilot(self):
         """Назначенная сессия находится по коду пилота, завершённая — нет."""
-        сессия = self.с.назначить()
-        self.assertEqual(self.х.найтиНазначеннуюСессию(self.с.пилот.код).код, сессия.код)
-        сессия.завершить()
-        self.х.обновитьСессию(сессия)
-        self.assertIsNone(self.х.найтиНазначеннуюСессию(self.с.пилот.код))
+        session = self.s.assign()
+        self.assertEqual(self.db.assigned_session(self.s.pilot.pk).pk, session.pk)
+        session.complete()
+        self.db.save_session(session)
+        self.assertIsNone(self.db.assigned_session(self.s.pilot.pk))
 
-    def test_таблицы_упорядочены(self):
+    def test_tables_are_ordered(self):
         """Таблицы сессии возвращаются по порядковому номеру; удаление очищает их."""
-        сессия = self.с.назначить()
-        for номер in (3, 1, 2):
-            self.х.создатьТаблицу(ТаблицаШульте(кодСессии=сессия.код, номерПоПорядку=номер, размер=3,
-                                                расположениеЧисел=РасположениеЧисел.ПО_ПОРЯДКУ, времяСек=4.0))
-        self.assertEqual([т.номерПоПорядку for т in self.х.найтиТаблицыСессии(сессия.код)], [1, 2, 3])
-        self.х.удалитьТаблицыСессии(сессия.код)
-        self.assertEqual(self.х.найтиТаблицыСессии(сессия.код), [])
+        session = self.s.assign()
+        for order in (3, 1, 2):
+            self.db.create_table(SchulteTable(session_id=session.pk, order_no=order, size=3,
+                                                number_order=NumberOrder.ORDERED, time_sec=4.0))
+        self.assertEqual([t.order_no for t in self.db.tables_of(session.pk)], [1, 2, 3])
+        self.db.delete_tables(session.pk)
+        self.assertEqual(self.db.tables_of(session.pk), [])
 
-    def test_результат_сохраняется_вместе_со_статусом(self):
+    def test_result_saved_with_status(self):
         """Результат и новый статус сессии сохраняются одной транзакцией."""
-        сессия = self.с.назначить()
-        сессия.завершить()
-        результат = РезультатТестирования(кодСессии=сессия.код, эр=8.2, вр=0.97, пу=0.85)
-        self.х.сохранитьРезультатСессии(сессия, результат)
-        self.assertEqual(self.х.найтиСессию(сессия.код).статус, СтатусСессии.ЗАВЕРШЕНА)
-        self.assertAlmostEqual(self.х.найтиРезультатСессии(сессия.код).эр, 8.2)
+        session = self.s.assign()
+        session.complete()
+        result = TestResult(session_id=session.pk, er=8.2, vr=0.97, pu=0.85)
+        self.db.save_result(session, result)
+        self.assertEqual(self.db.session_by_id(session.pk).status, SessionStatus.COMPLETED)
+        self.assertAlmostEqual(self.db.result_of(session.pk).er, 8.2)
 
-    def test_второй_результат_сессии_откатывается(self):
+    def test_second_result_rolls_back(self):
         """Повторное сохранение результата отклоняется и не меняет статус сессии."""
-        сессия = self.с.назначить()
-        сессия.завершить()
-        self.х.сохранитьРезультатСессии(сессия, РезультатТестирования(кодСессии=сессия.код, эр=1))
-        сессия.статус = СтатусСессии.ОТМЕНЕНА
-        with self.assertRaises(ОшибкаДанных):
-            self.х.сохранитьРезультатСессии(сессия, РезультатТестирования(кодСессии=сессия.код, эр=2))
-        self.assertEqual(self.х.найтиСессию(сессия.код).статус, СтатусСессии.ЗАВЕРШЕНА)
+        session = self.s.assign()
+        session.complete()
+        self.db.save_result(session, TestResult(session_id=session.pk, er=1))
+        session.status = SessionStatus.CANCELLED
+        with self.assertRaises(DataError):
+            self.db.save_result(session, TestResult(session_id=session.pk, er=2))
+        self.assertEqual(self.db.session_by_id(session.pk).status, SessionStatus.COMPLETED)
 
-    def test_действующая_норма_последняя(self):
+    def test_current_norm_is_latest(self):
         """Действующей считается последняя созданная норма."""
-        новая = self.с.норма.__class__(эрМин=1, эрМакс=30, врМин=0.5, врМакс=1.5, пуМин=0.5, пуМакс=1.5)
-        self.х.создатьНорму(новая)
-        self.assertEqual(self.х.найтиДействующуюНорму().код, новая.код)
+        fresh = self.s.norm.__class__(er_min=1, er_max=30, vr_min=0.5, vr_max=1.5, pu_min=0.5, pu_max=1.5)
+        self.db.create_norm(fresh)
+        self.assertEqual(self.db.current_norm_row().pk, fresh.pk)
 
-    def test_использование_нормы(self):
+    def test_norm_in_use(self):
         """Хранилище определяет, использована ли норма в заключениях."""
-        сессия = self.с.пройти([5, 5, 5, 5, 5])
-        р = self.х.найтиРезультатСессии(сессия.код)
-        self.assertFalse(self.х.нормаИспользуется(self.с.норма.код))
-        self.х.создатьЗаключение(ЗаключениеОДопуске(кодРезультата=р.код, кодПсихолога=self.с.психолог.код,
-                                                    кодНормы=self.с.норма.код, решение=РешениеОДопуске.ГОДЕН,
-                                                    дата=date.today()))
-        self.assertTrue(self.х.нормаИспользуется(self.с.норма.код))
-        self.assertEqual(len(self.х.найтиЗаключенияРезультата(р.код)), 1)
+        session = self.s.finish_run([5, 5, 5, 5, 5])
+        r = self.db.result_of(session.pk)
+        self.assertFalse(self.db.norm_is_used(self.s.norm.pk))
+        self.db.create_conclusion(Conclusion(result_id=r.pk, psychologist_id=self.s.psychologist.pk,
+                                                    norm_id=self.s.norm.pk, decision=Decision.FIT,
+                                                    on_date=date.today()))
+        self.assertTrue(self.db.norm_is_used(self.s.norm.pk))
+        self.assertEqual(len(self.db.conclusions_for(r.pk)), 1)
 
-    def test_отчёт_сохраняет_пилотов(self):
+    def test_report_stores_pilots(self):
         """Сводный отчёт сохраняется вместе со списком пилотов (связь «многие ко многим»)."""
-        отчёт = СводныйОтчёт(кодАдминистратора=self.с.админ.код, началоПериода=date(2026, 1, 1),
-                             конецПериода=date(2026, 12, 31), датаСоздания=datetime.now())
-        from attention_system.business.entities import СтрокаОтчёта
-        отчёт.добавитьСтроку(СтрокаОтчёта(кодПилота=self.с.пилот.код, фио="Ф", числоСессий=1, срЭР=1, срВР=1, срПУ=1))
-        self.х.создатьОтчёт(отчёт)
-        self.assertEqual(self.х.найтиПилотовОтчёта(отчёт.код), [self.с.пилот.код])
+        report = SummaryReport(admin_id=self.s.admin_user.pk, period_start=date(2026, 1, 1),
+                             period_end=date(2026, 12, 31), created_at=datetime.now())
+        from attention_system.business.entities import ReportLine
+        report.add_line(ReportLine(pilot_id=self.s.pilot.pk, full_name="Ф", session_count=1, avg_er=1, avg_vr=1, avg_pu=1))
+        self.db.create_report(report)
+        self.assertEqual(self.db.pilots_of_report(report.pk), [self.s.pilot.pk])
 
-    def test_параллельная_запись_сессий(self):
+    def test_parallel_session_writes(self):
         """Из 20 потоков одновременно создаются сессии без ошибок и потерь."""
-        ошибки = []
+        errors = []
 
-        def задача():
+        def task():
             try:
                 for _ in range(5):
-                    self.с.назначить()
-            except Exception as ошибка:  # noqa: BLE001
-                ошибки.append(ошибка)
+                    self.s.assign()
+            except Exception as error:  # noqa: BLE001
+                errors.append(error)
 
-        потоки = [threading.Thread(target=задача) for _ in range(20)]
-        [п.start() for п in потоки]
-        [п.join() for п in потоки]
-        self.assertEqual(ошибки, [])
-        self.assertEqual(len(self.х.найтиСессииПилота(self.с.пилот.код)), 100)
+        threads = [threading.Thread(target=task) for _ in range(20)]
+        [p.start() for p in threads]
+        [p.join() for p in threads]
+        self.assertEqual(errors, [])
+        self.assertEqual(len(self.db.sessions_of(self.s.pilot.pk)), 100)
 
 
 if __name__ == "__main__":

@@ -6,188 +6,188 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Optional
 
-from attention_system.business.calculations import РасчётПоказателей
+from attention_system.business.calculations import SchulteMath
 from attention_system.business.enums import (
-    РасположениеЧисел, РешениеОДопуске, Роль, СтатусСессии, ТипПроверки)
-from attention_system.business.errors import ОшибкаДанных, ОшибкаСостояния
-from attention_system.markup import стереотип
-from attention_system.middleware.password import ХэшПароля
+    NumberOrder, Decision, Role, SessionStatus, CheckType)
+from attention_system.business.errors import DataError, StateError
+from attention_system.markup import stereotype
+from attention_system.middleware.password import PasswordHash
 
 
-@стереотип("сущность")
+@stereotype("сущность")
 @dataclass(kw_only=True)
-class Пользователь:
+class User:
     """Учётная запись пользователя системы."""
-    логин: str
-    хэшПароля: str
-    роль: Роль
-    последнийВход: Optional[datetime] = None
-    код: Optional[int] = None
+    login: str
+    password_hash: str
+    role: Role
+    last_login: Optional[datetime] = None
+    pk: Optional[int] = None
 
-    def проверитьПароль(self, пароль: str) -> bool:
-        return ХэшПароля.проверить(пароль, self.хэшПароля)
+    def check_password(self, password: str) -> bool:
+        return PasswordHash.verify(password, self.password_hash)
 
-    def определитьРоль(self) -> Роль:
-        return self.роль
+    def resolve_role(self) -> Role:
+        return self.role
 
-    def отметитьВход(self, момент: datetime) -> None:
-        self.последнийВход = момент
+    def mark_login(self, moment: datetime) -> None:
+        self.last_login = moment
 
 
-@стереотип("сущность")
+@stereotype("сущность")
 @dataclass(kw_only=True)
-class Пилот(Пользователь):
+class Pilot(User):
     """Пилот авиакомпании (подкласс пользователя)."""
-    роль: Роль = Роль.ПИЛОТ
-    фио: str
-    табельныйНомер: str
-    должность: str = ""
+    role: Role = Role.PILOT
+    full_name: str
+    employee_number: str
+    position: str = ""
 
 
-@стереотип("сущность")
+@stereotype("сущность")
 @dataclass(kw_only=True)
-class АвиационныйПсихолог(Пользователь):
-    роль: Роль = Роль.ПСИХОЛОГ
-    фио: str
+class Psychologist(User):
+    role: Role = Role.PSYCHOLOGIST
+    full_name: str
 
 
-@стереотип("сущность")
+@stereotype("сущность")
 @dataclass(kw_only=True)
-class Администратор(Пользователь):
-    роль: Роль = Роль.АДМИНИСТРАТОР
-    фио: str
+class Administrator(User):
+    role: Role = Role.ADMINISTRATOR
+    full_name: str
 
 
-@стереотип("сущность")
+@stereotype("сущность")
 @dataclass(kw_only=True)
-class СессияТестирования:
+class TestSession:
     """Одно прохождение пилотом комплекта из пяти таблиц Шульте.
     Объект зависит от состояния: назначена -> завершена | отменена."""
-    кодПилота: int
-    кодПсихолога: int
-    датаВремя: datetime
-    типПроверки: ТипПроверки
-    методика: str = "Шульте"
-    статус: СтатусСессии = СтатусСессии.НАЗНАЧЕНА
-    код: Optional[int] = None
+    pilot_id: int
+    psychologist_id: int
+    occurred_at: datetime
+    check_type: CheckType
+    method: str = "Шульте"
+    status: SessionStatus = SessionStatus.ASSIGNED
+    pk: Optional[int] = None
 
-    def назначена(self) -> bool:
-        return self.статус == СтатусСессии.НАЗНАЧЕНА
+    def is_assigned(self) -> bool:
+        return self.status == SessionStatus.ASSIGNED
 
-    def завершить(self) -> None:
-        self.__перейти(СтатусСессии.ЗАВЕРШЕНА)
+    def complete(self) -> None:
+        self.__move(SessionStatus.COMPLETED)
 
-    def отменить(self) -> None:
-        self.__перейти(СтатусСессии.ОТМЕНЕНА)
+    def cancel(self) -> None:
+        self.__move(SessionStatus.CANCELLED)
 
-    def __перейти(self, новый: СтатусСессии) -> None:
-        if self.статус != СтатусСессии.НАЗНАЧЕНА:
-            raise ОшибкаСостояния(
-                f"Сессия в состоянии «{self.статус.value}» не может стать «{новый.value}»")
-        self.статус = новый
+    def __move(self, is_new: SessionStatus) -> None:
+        if self.status != SessionStatus.ASSIGNED:
+            raise StateError(
+                f"Сессия в состоянии «{self.status.value}» не может стать «{is_new.value}»")
+        self.status = is_new
 
 
-@стереотип("сущность")
+@stereotype("сущность")
 @dataclass(kw_only=True)
-class ТаблицаШульте:
+class SchulteTable:
     """Таблица n×n с числами от 1 до n²."""
-    кодСессии: int
-    номерПоПорядку: int
-    размер: int
-    расположениеЧисел: РасположениеЧисел
-    времяСек: Optional[float] = None
-    числа: list[int] = field(default_factory=list)
-    код: Optional[int] = None
+    session_id: int
+    order_no: int
+    size: int
+    number_order: NumberOrder
+    time_sec: Optional[float] = None
+    numbers: list[int] = field(default_factory=list)
+    pk: Optional[int] = None
 
-    def сгенерироватьЧисла(self, генератор: Optional[random.Random] = None) -> list[int]:
-        if self.размер < 2:
-            raise ОшибкаДанных("Размер таблицы должен быть не меньше 2")
-        числа = list(range(1, self.размер ** 2 + 1))
-        if self.расположениеЧисел == РасположениеЧисел.ВПЕРЕМЕШКУ:
-            (генератор or random.Random()).shuffle(числа)
-        self.числа = числа
-        return числа
+    def generate_numbers(self, rng: Optional[random.Random] = None) -> list[int]:
+        if self.size < 2:
+            raise DataError("Размер таблицы должен быть не меньше 2")
+        numbers = list(range(1, self.size ** 2 + 1))
+        if self.number_order == NumberOrder.SHUFFLED:
+            (rng or random.Random()).shuffle(numbers)
+        self.numbers = numbers
+        return numbers
 
-    def зафиксироватьВремя(self, секунды: float) -> None:
-        if секунды <= 0:
-            raise ОшибкаДанных("Время прохождения должно быть положительным")
-        self.времяСек = секунды
+    def record_time(self, seconds: float) -> None:
+        if seconds <= 0:
+            raise DataError("Время прохождения должно быть положительным")
+        self.time_sec = seconds
 
 
-@стереотип("сущность")
+@stereotype("сущность")
 @dataclass(kw_only=True)
-class РезультатТестирования:
+class TestResult:
     """Расчётные показатели сессии: ЭР, ВР, ПУ."""
-    кодСессии: int
-    эр: float = 0.0
-    вр: float = 0.0
-    пу: float = 0.0
-    код: Optional[int] = None
+    session_id: int
+    er: float = 0.0
+    vr: float = 0.0
+    pu: float = 0.0
+    pk: Optional[int] = None
 
-    def рассчитатьПоказатели(self, времена: list[float]) -> None:
-        self.эр, self.вр, self.пу = РасчётПоказателей.рассчитать(времена)
+    def calculate_metrics(self, times: list[float]) -> None:
+        self.er, self.vr, self.pu = SchulteMath.calculate(times)
 
 
-@стереотип("сущность")
+@stereotype("сущность")
 @dataclass(kw_only=True)
-class НормаДопуска:
+class AdmissionNorm:
     """Допустимые диапазоны показателей, при которых пилот годен к полётам."""
-    эрМин: float
-    эрМакс: float
-    врМин: float
-    врМакс: float
-    пуМин: float
-    пуМакс: float
-    код: Optional[int] = None
+    er_min: float
+    er_max: float
+    vr_min: float
+    vr_max: float
+    pu_min: float
+    pu_max: float
+    pk: Optional[int] = None
 
-    def проверитьДиапазоны(self) -> None:
-        for название, нижняя, верхняя in (("ЭР", self.эрМин, self.эрМакс),
-                                           ("ВР", self.врМин, self.врМакс),
-                                           ("ПУ", self.пуМин, self.пуМакс)):
-            if нижняя > верхняя:
-                raise ОшибкаДанных(f"Диапазон {название}: нижняя граница больше верхней")
+    def check_ranges(self) -> None:
+        for title, low, high in (("ЭР", self.er_min, self.er_max),
+                                           ("ВР", self.vr_min, self.vr_max),
+                                           ("ПУ", self.pu_min, self.pu_max)):
+            if low > high:
+                raise DataError(f"Диапазон {title}: нижняя граница больше верхней")
 
-    def проверитьПоказатели(self, результат: РезультатТестирования) -> bool:
-        return (self.эрМин <= результат.эр <= self.эрМакс
-                and self.врМин <= результат.вр <= self.врМакс
-                and self.пуМин <= результат.пу <= self.пуМакс)
+    def matches(self, result: TestResult) -> bool:
+        return (self.er_min <= result.er <= self.er_max
+                and self.vr_min <= result.vr <= self.vr_max
+                and self.pu_min <= result.pu <= self.pu_max)
 
 
-@стереотип("сущность")
+@stereotype("сущность")
 @dataclass(kw_only=True)
-class ЗаключениеОДопуске:
-    кодРезультата: int
-    кодПсихолога: int
-    кодНормы: int
-    решение: РешениеОДопуске
-    дата: date
-    комментарий: str = ""
-    код: Optional[int] = None
+class Conclusion:
+    result_id: int
+    psychologist_id: int
+    norm_id: int
+    decision: Decision
+    on_date: date
+    comment: str = ""
+    pk: Optional[int] = None
 
 
-@стереотип("структура данных")
+@stereotype("структура данных")
 @dataclass(kw_only=True)
-class СтрокаОтчёта:
-    кодПилота: int
-    фио: str
-    числоСессий: int
-    срЭР: float
-    срВР: float
-    срПУ: float
+class ReportLine:
+    pilot_id: int
+    full_name: str
+    session_count: int
+    avg_er: float
+    avg_vr: float
+    avg_pu: float
 
 
-@стереотип("сущность")
+@stereotype("сущность")
 @dataclass(kw_only=True)
-class СводныйОтчёт:
-    кодАдминистратора: int
-    началоПериода: date
-    конецПериода: date
-    датаСоздания: datetime
-    строки: list[СтрокаОтчёта] = field(default_factory=list)
-    код: Optional[int] = None
+class SummaryReport:
+    admin_id: int
+    period_start: date
+    period_end: date
+    created_at: datetime
+    lines: list[ReportLine] = field(default_factory=list)
+    pk: Optional[int] = None
 
-    def добавитьСтроку(self, строка: СтрокаОтчёта) -> None:
-        self.строки.append(строка)
+    def add_line(self, row: ReportLine) -> None:
+        self.lines.append(row)
 
-    def кодыПилотов(self) -> list[int]:
-        return [с.кодПилота for с in self.строки]
+    def pilot_ids(self) -> list[int]:
+        return [s.pilot_id for s in self.lines]

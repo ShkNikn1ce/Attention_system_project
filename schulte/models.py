@@ -25,6 +25,22 @@ class User(AbstractUser):
     def display_name(self) -> str:
         return self.full_name or self.get_username()
 
+    def short_name(self) -> str:
+        """Фамилия И. О. Первое слово — фамилия, остальные — инициалы."""
+        parts = (self.full_name or self.get_username()).split()
+        if len(parts) < 2:
+            return parts[0] if parts else self.get_username()
+        initials = []
+        for part in parts[1:]:
+            letters = [char for char in part if char.isalpha()]
+            if not letters:
+                continue
+            if "." in part or len(letters) <= 2:
+                initials.extend(f"{char.upper()}." for char in letters)
+            else:
+                initials.append(f"{letters[0].upper()}.")
+        return f"{parts[0]} {' '.join(initials)}" if initials else parts[0]
+
     def __str__(self) -> str:
         return f"{self.display_name()} ({self.get_role_display()})"
 
@@ -97,17 +113,29 @@ class TestSession(models.Model):
         User, verbose_name="психолог", related_name="assigned_sessions", on_delete=models.PROTECT)
     scheduled_at = models.DateTimeField("дата и время")
     check_type = models.CharField("тип проверки", max_length=20, choices=CheckType.choices)
+    table_size = models.PositiveSmallIntegerField(
+        "размер таблиц",
+        choices=((3, "3×3"), (4, "4×4"), (5, "5×5")),
+        default=3,
+    )
+    number_order = models.CharField(
+        "порядок следования чисел",
+        max_length=20,
+        choices=(("по порядку", "По порядку"), ("вперемешку", "Вперемешку")),
+        default="по порядку",
+    )
     method = models.CharField("методика", max_length=40, default="Шульте")
     status = models.CharField(
         "статус", max_length=20, choices=Status.choices, default=Status.ASSIGNED)
+    practice_done = models.BooleanField("пробная таблица пройдена", default=False)
 
     class Meta:
-        verbose_name = "сессия тестирования"
-        verbose_name_plural = "сессии тестирования"
+        verbose_name = "попытка тестирования"
+        verbose_name_plural = "попытки тестирования"
         ordering = ["-scheduled_at", "-id"]
 
     def __str__(self) -> str:
-        return f"Сессия {self.pk}: {self.pilot.display_name()}, {self.get_status_display()}"
+        return f"{self.pilot.display_name()}, {self.get_check_type_display()}, {self.get_status_display()}"
 
     @property
     def status_kind(self) -> str:
@@ -126,7 +154,7 @@ class SchulteTable(models.Model):
         SHUFFLED = "вперемешку", "Вперемешку"
 
     session = models.ForeignKey(
-        TestSession, verbose_name="сессия", related_name="tables", on_delete=models.CASCADE)
+        TestSession, verbose_name="попытка", related_name="tables", on_delete=models.CASCADE)
     order = models.PositiveSmallIntegerField("номер по порядку")
     size = models.PositiveSmallIntegerField("размер")
     layout = models.CharField("расположение чисел", max_length=20, choices=Layout.choices)
@@ -144,14 +172,14 @@ class SchulteTable(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"Таблица {self.order} сессии {self.session_id}"
+        return f"Таблица {self.order}"
 
 
 class TestResult(models.Model):
     """ЭР, ВР и ПУ завершённой сессии."""
 
     session = models.OneToOneField(
-        TestSession, verbose_name="сессия", related_name="result", on_delete=models.CASCADE)
+        TestSession, verbose_name="попытка", related_name="result", on_delete=models.CASCADE)
     er = models.FloatField("ЭР")
     vr = models.FloatField("ВР")
     pu = models.FloatField("ПУ")
@@ -168,9 +196,9 @@ class Conclusion(models.Model):
     """Заключение психолога о допуске пилота к полётам."""
 
     class Decision(models.TextChoices):
-        FIT = "годен", "Годен"
-        FIT_LIMITED = "годен с ограничением", "Годен с ограничением"
-        EXTRA = "направлен на дополнительное обследование", "Направлен на дополнительное обследование"
+        FIT = "годен", "Допустить"
+        FIT_LIMITED = "годен с ограничением", "Допустить с ограничением"
+        EXTRA = "направлен на дополнительное обследование", "Направить на дополнительное обследование"
 
     result = models.ForeignKey(
         TestResult, verbose_name="результат", related_name="conclusions", on_delete=models.PROTECT)
@@ -189,6 +217,15 @@ class Conclusion(models.Model):
 
     def __str__(self) -> str:
         return f"{self.result.session.pilot.display_name()}: {self.get_decision_display()}"
+
+    @property
+    def pilot_decision(self) -> str:
+        """Итог для пилота: не рекомендация психолога, а состояние допуска."""
+        return {
+            self.Decision.FIT: "Допущен",
+            self.Decision.FIT_LIMITED: "Допущен с ограничением",
+            self.Decision.EXTRA: "Требуется дополнительное обследование",
+        }[self.decision]
 
     @property
     def decision_kind(self) -> str:
@@ -223,7 +260,7 @@ class ReportLine(models.Model):
     pilot = models.ForeignKey(
         User, verbose_name="пилот", related_name="report_lines", on_delete=models.PROTECT)
     full_name = models.CharField("ФИО", max_length=200)
-    session_count = models.PositiveIntegerField("число сессий")
+    session_count = models.PositiveIntegerField("число попыток")
     avg_er = models.FloatField("средний ЭР")
     avg_vr = models.FloatField("средний ВР")
     avg_pu = models.FloatField("средний ПУ")

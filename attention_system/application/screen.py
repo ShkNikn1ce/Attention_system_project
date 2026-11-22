@@ -1,19 +1,19 @@
 """Экран: простейший вывод сообщений пользователю (консоль и журнал для проверки)."""
 from __future__ import annotations
 
-from attention_system.markup import стереотип
+from attention_system.markup import stereotype
 
 
-@стереотип("граничный")
-class Экран:
-    def __init__(self, печатать: bool = False) -> None:
-        self.журнал: list[str] = []
-        self._печатать: bool = печатать
+@stereotype("граничный")
+class Screen:
+    def __init__(self, echo: bool = False) -> None:
+        self.log: list[str] = []
+        self._echo: bool = echo
 
-    def вывести(self, сообщение: str) -> None:
-        self.журнал.append(сообщение)
-        if self._печатать:
-            print(сообщение)
+    def show(self, message: str) -> None:
+        self.log.append(message)
+        if self._echo:
+            print(message)
 
-    def последнее(self) -> str:
-        return self.журнал[-1] if self.журнал else ""
+    def last(self) -> str:
+        return self.log[-1] if self.log else ""

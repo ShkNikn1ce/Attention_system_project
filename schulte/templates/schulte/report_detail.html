@@ -5,7 +5,7 @@
   <p class="lede">Пилотов: {{ report.lines.all|length }}. Отчёт передан в службу безопасности.</p>
   <section class="panel">
     <table>
-      <tr><th>Пилот</th><th>Сессий</th><th>Средний ЭР</th><th>Средний ВР</th><th>Средний ПУ</th></tr>
+      <tr><th>Пилот</th><th>Попыток</th><th>Средний ЭР</th><th>Средний ВР</th><th>Средний ПУ</th></tr>
       {% for line in report.lines.all %}
         <tr>
           <td>{{ line.full_name }}</td>

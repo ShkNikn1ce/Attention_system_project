@@ -105,6 +105,15 @@ class AssignForm(StyledForm):
         empty_label="Выберите пилота",
     )
     check_type = forms.ChoiceField(label="Тип проверки", choices=TestSession.CheckType.choices)
+    table_size = forms.TypedChoiceField(
+        label="Размер таблиц",
+        choices=((3, "3×3"), (4, "4×4"), (5, "5×5")),
+        coerce=int,
+    )
+    number_order = forms.ChoiceField(
+        label="Порядок следования чисел",
+        choices=(("по порядку", "По порядку"), ("вперемешку", "Вперемешку")),
+    )
 
 
 class ConclusionForm(StyledForm):

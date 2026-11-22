@@ -3,17 +3,18 @@
 {% block content %}
   <h1>{{ pilot.display_name }}</h1>
   {% if not enough %}
-    <p class="banner warn">Недостаточно данных: нужно не менее двух завершённых сессий.</p>
+    <p class="banner warn">Недостаточно данных: нужно не менее двух завершённых попыток.</p>
   {% else %}
     <section class="panel">
       <table>
-        <tr><th>Дата и время</th><th>ЭР</th><th>ВР</th><th>ПУ</th></tr>
+        <tr><th>Попытка</th><th>ЭР</th><th>ВР</th><th>ПУ</th><th>Дата и время</th></tr>
         {% for point in points %}
           <tr>
-            <td>{{ point.at|date:"Y-m-d H:i" }}</td>
+            <td class="num">{{ forloop.counter }}</td>
             <td class="num">{{ point.er|floatformat:2 }}</td>
             <td class="num">{{ point.vr|floatformat:3 }}</td>
             <td class="num">{{ point.pu|floatformat:3 }}</td>
+            <td>{{ point.at|date:"Y-m-d H:i" }}</td>
           </tr>
         {% endfor %}
       </table>
@@ -21,9 +22,21 @@
     <div class="charts" style="margin-top:16px">
       {% for chart in charts %}
         <section class="panel">
-          <h2>{{ chart.title }} <span class="muted">{{ chart.low|floatformat:3 }}–{{ chart.high|floatformat:3 }}</span></h2>
-          <svg class="chart" viewBox="0 0 640 180" role="img">
-            <polyline points="{{ chart.points }}"></polyline>
+          <h2>{{ chart.title }}</h2>
+          <svg class="chart" viewBox="0 0 {{ chart.width }} {{ chart.height }}" role="img" aria-label="{{ chart.y_title }} по попыткам">
+            {% for tick in chart.ticks %}
+              <line class="grid" x1="{{ chart.pad_left }}" y1="{{ tick.y }}" x2="{{ chart.end_x }}" y2="{{ tick.y }}"></line>
+              <text class="tick" x="68" y="{{ tick.y }}" text-anchor="end" dominant-baseline="middle">{{ tick.label }}</text>
+            {% endfor %}
+            <line class="axis" x1="{{ chart.pad_left }}" y1="{{ chart.top }}" x2="{{ chart.pad_left }}" y2="{{ chart.baseline }}"></line>
+            <line class="axis" x1="{{ chart.pad_left }}" y1="{{ chart.baseline }}" x2="{{ chart.end_x }}" y2="{{ chart.baseline }}"></line>
+            <polyline points="{{ chart.polyline }}"></polyline>
+            {% for dot in chart.coords %}
+              <circle class="point" cx="{{ dot.x }}" cy="{{ dot.y }}" r="5"></circle>
+              <text class="tick" x="{{ dot.x }}" y="{{ chart.label_y }}" text-anchor="middle">{{ dot.attempt }}</text>
+            {% endfor %}
+            <text class="axis-title" x="16" y="{{ chart.y_title_y }}" text-anchor="middle" transform="rotate(-90 16 {{ chart.y_title_y }})">{{ chart.y_title }}</text>
+            <text class="axis-title" x="{{ chart.title_x }}" y="{{ chart.title_y }}" text-anchor="middle">{{ chart.x_title }}</text>
           </svg>
         </section>
       {% endfor %}

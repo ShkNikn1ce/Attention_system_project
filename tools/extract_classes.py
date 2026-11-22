@@ -4,103 +4,103 @@ import ast
 import json
 import pathlib
 
-КОРЕНЬ = pathlib.Path(__file__).resolve().parent.parent / "attention_system"
-ТИПЫ = {"str": "Строка", "int": "Целое", "float": "Число", "bool": "Логич", "datetime": "ДатаВремя",
+ROOT = pathlib.Path(__file__).resolve().parent.parent / "attention_system"
+TYPE_LABELS = {"str": "Строка", "int": "Целое", "float": "Число", "bool": "Логич", "datetime": "ДатаВремя",
         "date": "Дата", "object": "Объект", "Future": "Будущее", "Random": "ГенераторСлучайных",
         "Lock": "Замок", "RLock": "Замок", "Connection": "Соединение", "ThreadPoolExecutor": "ПулПотоков", "Row": "СтрокаБД", "Callable": "Вызываемое"}
 
 
-def тип(узел) -> str:
-    if узел is None:
+def format_type(node) -> str:
+    if node is None:
         return ""
-    if isinstance(узел, ast.Constant):
-        return "ничего" if узел.value is None else str(узел.value)
-    if isinstance(узел, ast.Name):
-        return ТИПЫ.get(узел.id, узел.id)
-    if isinstance(узел, ast.Attribute):
-        return ТИПЫ.get(узел.attr, узел.attr)
-    if isinstance(узел, ast.BinOp):
-        return тип(узел.left) + " | " + тип(узел.right)
-    if isinstance(узел, ast.Subscript):
-        основа = узел.value.id if isinstance(узел.value, ast.Name) else ""
-        срез = узел.slice
-        части = [тип(э) for э in срез.elts] if isinstance(срез, ast.Tuple) else [тип(срез)]
-        if основа == "Optional":
-            return части[0] + "?"
-        имя = {"list": "Список", "dict": "Словарь", "tuple": "Кортеж", "Callable": "Вызываемое"}.get(основа, основа)
-        return f"{имя}[{', '.join(части)}]"
-    if isinstance(узел, ast.List):
-        return "[" + ", ".join(тип(э) for э in узел.elts) + "]"
-    return ast.unparse(узел)
+    if isinstance(node, ast.Constant):
+        return "ничего" if node.value is None else str(node.value)
+    if isinstance(node, ast.Name):
+        return TYPE_LABELS.get(node.id, node.id)
+    if isinstance(node, ast.Attribute):
+        return TYPE_LABELS.get(node.attr, node.attr)
+    if isinstance(node, ast.BinOp):
+        return format_type(node.left) + " | " + format_type(node.right)
+    if isinstance(node, ast.Subscript):
+        origin = node.value.id if isinstance(node.value, ast.Name) else ""
+        slice_node = node.slice
+        parts = [format_type(e) for e in slice_node.elts] if isinstance(slice_node, ast.Tuple) else [format_type(slice_node)]
+        if origin == "Optional":
+            return parts[0] + "?"
+        name = {"list": "Список", "dict": "Словарь", "tuple": "Кортеж", "Callable": "Вызываемое"}.get(origin, origin)
+        return f"{name}[{', '.join(parts)}]"
+    if isinstance(node, ast.List):
+        return "[" + ", ".join(format_type(e) for e in node.elts) + "]"
+    return ast.unparse(node)
 
 
-def видимость(имя: str) -> str:
-    if имя.startswith("__"):
+def visibility(name: str) -> str:
+    if name.startswith("__"):
         return "-"
-    return "#" if имя.startswith("_") else "+"
+    return "#" if name.startswith("_") else "+"
 
 
-def значение(узел) -> str:
-    if isinstance(узел, ast.Constant):
-        return repr(узел.value).replace("None", "ничего") if узел.value is not None else "ничего"
-    if isinstance(узел, ast.Attribute):
-        return узел.attr
+def stored(node) -> str:
+    if isinstance(node, ast.Constant):
+        return repr(node.value).replace("None", "ничего") if node.value is not None else "ничего"
+    if isinstance(node, ast.Attribute):
+        return node.attr
     return ""
 
 
-def разобрать(путь: pathlib.Path):
-    дерево = ast.parse(путь.read_text(encoding="utf-8"))
-    for узел in ast.walk(дерево):
-        if not isinstance(узел, ast.ClassDef):
+def parse_file(path: pathlib.Path):
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
             continue
-        стерео = ""
-        for д in узел.decorator_list:
-            if isinstance(д, ast.Call) and isinstance(д.func, ast.Name) and д.func.id == "стереотип":
-                стерео = д.args[0].value
-        базы = [ast.unparse(б) for б in узел.bases]
-        if "Enum" in базы or "Exception" in " ".join(базы) or "ОшибкаПредметнойОбласти" in базы:
+        stereo = ""
+        for decor in node.decorator_list:
+            if isinstance(decor, ast.Call) and isinstance(decor.func, ast.Name) and decor.func.id == "stereotype":
+                stereo = decor.args[0].value
+        bases = [ast.unparse(base_node) for base_node in node.bases]
+        if "Enum" in bases or "Exception" in " ".join(bases) or "DomainError" in bases:
             continue
-        атрибуты, операции, вызовы = [], [], {}
-        for эл in узел.body:
-            if isinstance(эл, ast.AnnAssign) and isinstance(эл.target, ast.Name):
-                знач = значение(эл.value) if эл.value is not None else ""
-                атрибуты.append({"вид": видимость(эл.target.id), "имя": эл.target.id, "тип": тип(эл.annotation), "знач": знач})
-            elif isinstance(эл, ast.Assign) and isinstance(эл.targets[0], ast.Name) and эл.targets[0].id.isupper():
-                атрибуты.append({"вид": "+", "имя": эл.targets[0].id, "тип": "", "знач": значение(эл.value)})
-            elif isinstance(эл, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if эл.name == "__init__":
-                    for вл in ast.walk(эл):
-                        if (isinstance(вл, ast.AnnAssign) and isinstance(вл.target, ast.Attribute)
-                                and isinstance(вл.target.value, ast.Name) and вл.target.value.id == "self"):
-                            атрибуты.append({"вид": видимость(вл.target.attr), "имя": вл.target.attr,
-                                             "тип": тип(вл.annotation), "знач": ""})
+        attributes, operations, calls = [], [], {}
+        for element in node.body:
+            if isinstance(element, ast.AnnAssign) and isinstance(element.target, ast.Name):
+                shown = stored(element.value) if element.value is not None else ""
+                attributes.append({"вид": visibility(element.target.id), "имя": element.target.id, "тип": format_type(element.annotation), "знач": shown})
+            elif isinstance(element, ast.Assign) and isinstance(element.targets[0], ast.Name) and element.targets[0].id.isupper():
+                attributes.append({"вид": "+", "имя": element.targets[0].id, "тип": "", "знач": stored(element.value)})
+            elif isinstance(element, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if element.name == "__init__":
+                    for inner in ast.walk(element):
+                        if (isinstance(inner, ast.AnnAssign) and isinstance(inner.target, ast.Attribute)
+                                and isinstance(inner.target.value, ast.Name) and inner.target.value.id == "self"):
+                            attributes.append({"вид": visibility(inner.target.attr), "имя": inner.target.attr,
+                                             "тип": format_type(inner.annotation), "знач": ""})
                     continue
-                if эл.name.startswith("__") and эл.name.endswith("__"):
+                if element.name.startswith("__") and element.name.endswith("__"):
                     continue
-                парам = [[а.arg, тип(а.annotation)] for а in эл.args.args if а.arg != "self"]
-                возвр = тип(эл.returns)
-                операции.append({"вид": видимость(эл.name), "имя": эл.name, "парам": парам,
-                                 "возвр": "" if возвр in ("ничего", "") else возвр})
-                for вызов in ast.walk(эл):
-                    if (isinstance(вызов, ast.Call) and isinstance(вызов.func, ast.Attribute)
-                            and isinstance(вызов.func.value, ast.Attribute)
-                            and isinstance(вызов.func.value.value, ast.Name) and вызов.func.value.value.id == "self"):
-                        вызовы.setdefault(вызов.func.value.attr, [])
-                        if вызов.func.attr not in вызовы[вызов.func.value.attr]:
-                            вызовы[вызов.func.value.attr].append(вызов.func.attr)
-        yield {"имя": узел.name, "модуль": str(путь.relative_to(КОРЕНЬ.parent)), "стереотип": стерео,
-               "базы": базы, "атрибуты": атрибуты, "операции": операции, "вызовы": вызовы}
+                param_list = [[a.arg, format_type(a.annotation)] for a in element.args.args if a.arg != "self"]
+                returned = format_type(element.returns)
+                operations.append({"вид": visibility(element.name), "имя": element.name, "парам": param_list,
+                                 "возвр": "" if returned in ("ничего", "") else returned})
+                for call in ast.walk(element):
+                    if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                            and isinstance(call.func.value, ast.Attribute)
+                            and isinstance(call.func.value.value, ast.Name) and call.func.value.value.id == "self"):
+                        calls.setdefault(call.func.value.attr, [])
+                        if call.func.attr not in calls[call.func.value.attr]:
+                            calls[call.func.value.attr].append(call.func.attr)
+        yield {"имя": node.name, "модуль": str(path.relative_to(ROOT.parent)), "stereotype": stereo,
+               "базы": bases, "атрибуты": attributes, "операции": operations, "вызовы": calls}
 
 
-итог = {}
-for путь in sorted(КОРЕНЬ.rglob("*.py")):
-    if путь.name in ("__init__.py", "main.py", "markup.py"):
+outcome = {}
+for path in sorted(ROOT.rglob("*.py")):
+    if path.name in ("__init__.py", "main.py", "markup.py"):
         continue
-    for к in разобрать(путь):
-        итог[к["имя"]] = к
+    for item in parse_file(path):
+        outcome[item["имя"]] = item
 pathlib.Path(__file__).resolve().parent.parent.joinpath("diagrams", "classes.json").write_text(
-    json.dumps(итог, ensure_ascii=False, indent=1), encoding="utf-8")
-print("классов извлечено:", len(итог))
-for имя in ("КонтроллерТестирования", "ФормаТестирования", "IХранилище"):
-    к = итог[имя]
-    print(имя, к["стереотип"], len(к["атрибуты"]), "атрибутов,", len(к["операции"]), "операций; вызовы:", {k: len(v) for k, v in к["вызовы"].items()})
+    json.dumps(outcome, ensure_ascii=False, indent=1), encoding="utf-8")
+print("классов извлечено:", len(outcome))
+for name in ("TestingController", "TestingForm", "Storage"):
+    item = outcome[name]
+    print(name, item["stereotype"], len(item["атрибуты"]), "атрибутов,", len(item["операции"]), "операций; вызовы:", {k: len(v) for k, v in item["вызовы"].items()})

@@ -3,7 +3,7 @@
 {% block content %}
   <h1>Удалить {{ pilot.display_name }}?</h1>
   {% if blocked %}
-    <p class="banner bad">Нельзя удалить пилота: у него есть сессии тестирования.</p>
+    <p class="banner bad">Нельзя удалить пилота: у него есть тестирования.</p>
     <a class="button" href="{% url 'pilot_list' %}">К списку</a>
   {% else %}
     <p class="lede">Учётная запись {{ pilot.username }} ({{ pilot.employee_number }}) будет удалена.</p>

@@ -2,34 +2,34 @@
 from enum import Enum
 
 
-class Роль(Enum):
-    ПИЛОТ = "pilot"
-    ПСИХОЛОГ = "psychologist"
-    АДМИНИСТРАТОР = "admin"
+class Role(Enum):
+    PILOT = "pilot"
+    PSYCHOLOGIST = "psychologist"
+    ADMINISTRATOR = "admin"
 
-    def названиеРоли(self) -> str:
+    def label(self) -> str:
         return {"pilot": "пилот", "psychologist": "авиационный психолог",
                 "admin": "администратор системы"}[self.value]
 
 
-class ТипПроверки(Enum):
-    ПЛАНОВАЯ = "плановая"
-    ПЕРИОДИЧЕСКАЯ = "периодическая"
-    ПРЕДПОЛЁТНАЯ = "предполётная"
+class CheckType(Enum):
+    PLANNED = "плановая"
+    PERIODIC = "периодическая"
+    PREFLIGHT = "предполётная"
 
 
-class СтатусСессии(Enum):
-    НАЗНАЧЕНА = "назначена"
-    ЗАВЕРШЕНА = "завершена"
-    ОТМЕНЕНА = "отменена"
+class SessionStatus(Enum):
+    ASSIGNED = "назначена"
+    COMPLETED = "завершена"
+    CANCELLED = "отменена"
 
 
-class РасположениеЧисел(Enum):
-    ПО_ПОРЯДКУ = "по порядку"
-    ВПЕРЕМЕШКУ = "вперемешку"
+class NumberOrder(Enum):
+    ORDERED = "по порядку"
+    SHUFFLED = "вперемешку"
 
 
-class РешениеОДопуске(Enum):
-    ГОДЕН = "годен"
-    ГОДЕН_С_ОГРАНИЧЕНИЕМ = "годен с ограничением"
-    ДОП_ОБСЛЕДОВАНИЕ = "направлен на дополнительное обследование"
+class Decision(Enum):
+    FIT = "годен"
+    FIT_LIMITED = "годен с ограничением"
+    EXTRA_EXAM = "направлен на дополнительное обследование"

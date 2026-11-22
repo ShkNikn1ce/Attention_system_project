@@ -4,46 +4,46 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from attention_system.business.entities import (
-    ЗаключениеОДопуске, Пилот, СводныйОтчёт, СессияТестирования)
-from attention_system.markup import стереотип
+    Conclusion, Pilot, SummaryReport, TestSession)
+from attention_system.markup import stereotype
 
 
-@стереотип("интерфейс")
-class IИнтерфейсУведомлений(ABC):
+@stereotype("интерфейс")
+class Notifier(ABC):
     @abstractmethod
-    def отправитьУведомление(self, пилот: Пилот, сессия: СессияТестирования) -> None:
+    def notify(self, pilot: Pilot, session: TestSession) -> None:
         """Сообщает пилоту о назначенной сессии тестирования."""
 
 
-@стереотип("граничный")
-class УведомленияВПамяти(IИнтерфейсУведомлений):
+@stereotype("граничный")
+class MemoryNotifier(Notifier):
     def __init__(self) -> None:
-        self.журнал: list[str] = []
+        self.log: list[str] = []
 
-    def отправитьУведомление(self, пилот: Пилот, сессия: СессияТестирования) -> None:
-        self.журнал.append(
-            f"{пилот.фио}: назначена {сессия.типПроверки.value} проверка на {сессия.датаВремя:%Y-%m-%d %H:%M}")
+    def notify(self, pilot: Pilot, session: TestSession) -> None:
+        self.log.append(
+            f"{pilot.full_name}: назначена {session.check_type.value} проверка на {session.occurred_at:%Y-%m-%d %H:%M}")
 
 
-@стереотип("интерфейс")
-class IИнтерфейсСлужбыБезопасности(ABC):
+@stereotype("интерфейс")
+class SafetyService(ABC):
     @abstractmethod
-    def передатьЗаключение(self, заключение: ЗаключениеОДопуске) -> None:
+    def hand_conclusion(self, conclusion: Conclusion) -> None:
         """Передаёт заключение о допуске в службу безопасности полётов."""
 
     @abstractmethod
-    def передатьОтчёт(self, отчёт: СводныйОтчёт) -> None:
+    def hand_report(self, report: SummaryReport) -> None:
         """Передаёт сводный отчёт в службу безопасности полётов."""
 
 
-@стереотип("граничный")
-class СлужбаБезопасностиВПамяти(IИнтерфейсСлужбыБезопасности):
+@stereotype("граничный")
+class MemorySafetyService(SafetyService):
     def __init__(self) -> None:
-        self.заключения: list[ЗаключениеОДопуске] = []
-        self.отчёты: list[СводныйОтчёт] = []
+        self.conclusions: list[Conclusion] = []
+        self.reports: list[SummaryReport] = []
 
-    def передатьЗаключение(self, заключение: ЗаключениеОДопуске) -> None:
-        self.заключения.append(заключение)
+    def hand_conclusion(self, conclusion: Conclusion) -> None:
+        self.conclusions.append(conclusion)
 
-    def передатьОтчёт(self, отчёт: СводныйОтчёт) -> None:
-        self.отчёты.append(отчёт)
+    def hand_report(self, report: SummaryReport) -> None:
+        self.reports.append(report)

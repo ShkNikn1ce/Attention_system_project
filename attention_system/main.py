@@ -5,88 +5,88 @@ from __future__ import annotations
 import random
 from datetime import date, datetime
 
-from attention_system.application import controllers as К
-from attention_system.application import forms as Ф
-from attention_system.application.screen import Экран
-from attention_system.business.entities import Администратор, АвиационныйПсихолог, НормаДопуска
-from attention_system.business.enums import РасположениеЧисел, ТипПроверки
-from attention_system.middleware.clock import СекундомерПоСценарию
-from attention_system.middleware.external import СлужбаБезопасностиВПамяти, УведомленияВПамяти
-from attention_system.middleware.password import ХэшПароля
-from attention_system.middleware.storage import ХранилищеSQLite
+from attention_system.application import controllers as ctl
+from attention_system.application import forms as ui
+from attention_system.application.screen import Screen
+from attention_system.business.entities import Administrator, Psychologist, AdmissionNorm
+from attention_system.business.enums import NumberOrder, CheckType
+from attention_system.middleware.clock import ScriptedClock
+from attention_system.middleware.external import MemorySafetyService, MemoryNotifier
+from attention_system.middleware.password import PasswordHash
+from attention_system.middleware.storage import SqliteStorage
 
 
-def вход(хранилище, логин, пароль, экран):
-    форма = Ф.ФормаВхода(К.КонтроллерАутентификации(хранилище), экран)
-    форма.открытьСистему()
-    форма.ввестиЛогинИПароль(логин, пароль)
-    return форма.сеанс
+def sign_in(storage, login, password, screen):
+    form = ui.LoginForm(ctl.AuthController(storage), screen)
+    form.open_system()
+    form.enter_credentials(login, password)
+    return form.work
 
 
-def главная() -> None:
-    экран = Экран(печатать=True)
-    хранилище = ХранилищеSQLite()
-    уведомления, служба = УведомленияВПамяти(), СлужбаБезопасностиВПамяти()
-    хранилище.создатьАдминистратора(Администратор(логин="admin", хэшПароля=ХэшПароля.создать("admin123"), фио="Администратор"))
-    хранилище.создатьПсихолога(АвиационныйПсихолог(логин="psy", хэшПароля=ХэшПароля.создать("psy12345"), фио="Петрова А.С."))
+def main() -> None:
+    screen = Screen(echo=True)
+    storage = SqliteStorage()
+    notifier, safety = MemoryNotifier(), MemorySafetyService()
+    storage.create_administrator(Administrator(login="admin", password_hash=PasswordHash.make("admin123"), full_name="Администратор"))
+    storage.create_psychologist(Psychologist(login="psy", password_hash=PasswordHash.make("psy12345"), full_name="Петрова А.С."))
 
     print("\n=== Прецедент 1. Вход: неверный пароль, затем верный ===")
-    вход(хранилище, "admin", "неверный", экран)
-    админ = вход(хранилище, "admin", "admin123", экран)
+    sign_in(storage, "admin", "неверный", screen)
+    admin_user = sign_in(storage, "admin", "admin123", screen)
 
     print("\n=== Прецедент 9. Нормы допуска ===")
-    формаНорм = Ф.ФормаНормДопуска(К.КонтроллерНорм(хранилище, админ), экран)
-    формаНорм.изменитьЗначения(НормаДопуска(эрМин=3, эрМакс=25, врМин=0.8, врМакс=1.1, пуМин=0.8, пуМакс=1.1))
-    формаНорм.открытьНормы()
+    norm_form = ui.NormForm(ctl.NormController(storage, admin_user), screen)
+    norm_form.change_values(AdmissionNorm(er_min=3, er_max=25, vr_min=0.8, vr_max=1.1, pu_min=0.8, pu_max=1.1))
+    norm_form.open_norms()
 
     print("\n=== Прецедент 8. Данные о пилотах ===")
-    формаПилотов = Ф.ФормаДанныхПилотов(К.КонтроллерДанныхПилотов(хранилище, админ), экран)
-    формаПилотов.ввестиДанныеПилота(К.ДанныеПилота(логин="pilot1", пароль="pilot123", фио="Шкодин Н.Р.", табельныйНомер="T-001", должность="КВС"))
-    формаПилотов.открытьСписокПилотов()
-    пилот = хранилище.найтиПилотов()[0]
+    pilots_form = ui.PilotAdminForm(ctl.PilotAdminController(storage, admin_user), screen)
+    pilots_form.enter_pilot(ctl.PilotData(login="pilot1", password="pilot123", full_name="Шкодин Н.Р.", employee_number="T-001", position="КВС"))
+    pilots_form.open_pilot_list()
+    pilot = storage.all_pilots()[0]
 
     print("\n=== Прецедент 4. Назначение тестирования ===")
-    психолог = вход(хранилище, "psy", "psy12345", экран)
-    формаНазначения = Ф.ФормаНазначенияТестирования(К.КонтроллерНазначения(хранилище, психолог, уведомления), экран)
-    формаНазначения.открытьНазначение()
-    формаНазначения.выбратьПилотаИТипПроверки(пилот.код, ТипПроверки.ПЛАНОВАЯ)
-    формаНазначения.подтвердитьНазначение()
+    psychologist = sign_in(storage, "psy", "psy12345", screen)
+    assign_form = ui.AssignmentForm(ctl.AssignmentController(storage, psychologist, notifier), screen)
+    assign_form.open_assignment()
+    assign_form.choose_pilot_and_check(pilot.pk, CheckType.PLANNED)
+    assign_form.confirm_assignment()
 
     print("\n=== Прецедент 2. Тестирование по методике Шульте (4×4, вперемешку) ===")
-    сеансПилота = вход(хранилище, "pilot1", "pilot123", экран)
-    секундомер = СекундомерПоСценарию([20, 18, 19, 22, 21])
-    формаТеста = Ф.ФормаТестирования(К.КонтроллерТестирования(хранилище, сеансПилота, random.Random(1)), экран, секундомер)
-    формаТеста.выбратьТестирование()
-    формаТеста.подтвердитьГотовность(4, РасположениеЧисел.ВПЕРЕМЕШКУ)
+    pilot_work = sign_in(storage, "pilot1", "pilot123", screen)
+    clock = ScriptedClock([20, 18, 19, 22, 21])
+    test_form = ui.TestingForm(ctl.TestingController(storage, pilot_work, random.Random(1)), screen, clock)
+    test_form.open_testing()
+    test_form.confirm_ready(4, NumberOrder.SHUFFLED)
     for _ in range(5):
-        формаТеста.указатьЧисла()
+        test_form.enter_numbers()
 
     print("\n=== Прецедент 3. Мои результаты ===")
-    формаМои = Ф.ФормаМоихРезультатов(К.КонтроллерРезультатовПилота(хранилище, сеансПилота), экран)
-    формаМои.открытьМоиРезультаты()
-    кодСессии = хранилище.найтиСессииПилота(пилот.код)[0].код
-    формаМои.выбратьСессию(кодСессии)
+    own_form = ui.OwnResultsForm(ctl.OwnResultsController(storage, pilot_work), screen)
+    own_form.open_own_results()
+    session_id = storage.sessions_of(pilot.pk)[0].pk
+    own_form.choose_session(session_id)
 
     print("\n=== Прецедент 5. Результаты глазами психолога ===")
-    формаРезультатов = Ф.ФормаРезультатовПилота(К.КонтроллерРезультатов(хранилище, психолог), экран)
-    формаРезультатов.выбратьПилота(пилот.код)
-    формаРезультатов.выбратьСессию(кодСессии)
+    review_form = ui.ReviewForm(ctl.ReviewController(storage, psychologist), screen)
+    review_form.choose_pilot(pilot.pk)
+    review_form.choose_session(session_id)
 
     print("\n=== Прецедент 6. Заключение о допуске ===")
-    формаЗаключения = Ф.ФормаЗаключения(К.КонтроллерЗаключения(хранилище, психолог, служба), экран)
-    формаЗаключения.запроситьЗаключение(кодСессии)
-    формаЗаключения.подтвердитьЗаключение()
+    conclusion_form = ui.ConclusionForm(ctl.ConclusionController(storage, psychologist, safety), screen)
+    conclusion_form.request_conclusion(session_id)
+    conclusion_form.confirm_conclusion()
 
     print("\n=== Прецедент 7. Динамика (нужны две сессии) ===")
-    формаДинамики = Ф.ФормаДинамики(К.КонтроллерДинамики(хранилище, психолог), экран)
-    формаДинамики.выбратьДинамикуПилота(пилот.код)
+    dynamics_form = ui.DynamicsForm(ctl.DynamicsController(storage, psychologist), screen)
+    dynamics_form.open_dynamics(pilot.pk)
 
     print("\n=== Прецедент 10. Сводный отчёт ===")
-    формаОтчёта = Ф.ФормаСводногоОтчёта(К.КонтроллерОтчётов(хранилище, админ, служба), экран)
-    формаОтчёта.открытьСводныйОтчёт()
-    формаОтчёта.указатьПериодИГруппу(date(2000, 1, 1), date.today(), [пилот.код])
-    print("\nУведомления:", уведомления.журнал)
+    report_form = ui.ReportForm(ctl.ReportController(storage, admin_user, safety), screen)
+    report_form.open_report()
+    report_form.set_period_and_group(date(2000, 1, 1), date.today(), [pilot.pk])
+    print("\nУведомления:", notifier.log)
 
 
 if __name__ == "__main__":
-    главная()
+    main()

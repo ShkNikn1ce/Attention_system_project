@@ -59,6 +59,7 @@
     </section>
   {% else %}
     <div class="cards">
+      <a class="card" href="{% url 'psychologist_list' %}">Психологи<span>В базе: {{ psychologist_count }}</span></a>
       <a class="card" href="{% url 'pilot_list' %}">Пилоты<span>В базе: {{ pilot_count }}</span></a>
       <a class="card" href="{% url 'norms' %}">Нормы допуска<span>{% if norm %}{{ norm }}{% else %}Нормы допуска ещё не заданы{% endif %}</span></a>
       <a class="card" href="{% url 'reports' %}">Сводный отчёт<span>Период и группа пилотов</span></a>

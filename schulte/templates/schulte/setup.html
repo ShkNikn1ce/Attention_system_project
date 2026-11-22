@@ -1,0 +1,13 @@
+{% extends "schulte/base.html" %}
+{% block title %}Первый администратор{% endblock %}
+{% block content %}
+  <section class="panel">
+    <h1>Учётная запись администратора</h1>
+    <p class="lede">Администратора в базе ещё нет. Задайте логин, пароль и ФИО. Повторно эта страница учётные записи не создаёт.</p>
+    <form method="post">
+      {% csrf_token %}
+      {% include "schulte/_form.html" %}
+      <button type="submit">Создать администратора</button>
+    </form>
+  </section>
+{% endblock %}

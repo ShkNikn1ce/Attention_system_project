@@ -4,6 +4,7 @@ from schulte import views
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("setup/", views.setup_view, name="setup"),
     path("login/", views.login_view, name="login"),
     path("register/", views.register_view, name="register"),
     path("logout/", views.logout_view, name="logout"),
@@ -19,6 +20,9 @@ urlpatterns = [
     path("reviews/session/<int:pk>/conclusion/", views.conclusion, name="conclusion"),
     path("dynamics/", views.dynamics, name="dynamics"),
     path("dynamics/<int:pk>/", views.dynamics_pilot, name="dynamics_pilot"),
+    path("psychologists/", views.psychologist_list, name="psychologist_list"),
+    path("psychologists/new/", views.psychologist_create, name="psychologist_create"),
+    path("psychologists/<int:pk>/edit/", views.psychologist_edit, name="psychologist_edit"),
     path("pilots/", views.pilot_list, name="pilot_list"),
     path("pilots/new/", views.pilot_create, name="pilot_create"),
     path("pilots/<int:pk>/edit/", views.pilot_edit, name="pilot_edit"),

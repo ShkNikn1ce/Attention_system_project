@@ -36,6 +36,7 @@
           <a href="{% url 'review_pilots' %}" {% if 'review' in request.resolver_match.url_name or request.resolver_match.url_name == 'conclusion' %}class="active"{% endif %}>Результаты</a>
           <a href="{% url 'dynamics' %}" {% if 'dynamics' in request.resolver_match.url_name %}class="active"{% endif %}>Динамика</a>
         {% else %}
+          <a href="{% url 'psychologist_list' %}" {% if 'psychologist' in request.resolver_match.url_name %}class="active"{% endif %}>Психологи</a>
           <a href="{% url 'pilot_list' %}" {% if 'pilot' in request.resolver_match.url_name %}class="active"{% endif %}>Пилоты</a>
           <a href="{% url 'norms' %}" {% if request.resolver_match.url_name == 'norms' %}class="active"{% endif %}>Нормы</a>
           <a href="{% url 'reports' %}" {% if 'report' in request.resolver_match.url_name %}class="active"{% endif %}>Отчёты</a>

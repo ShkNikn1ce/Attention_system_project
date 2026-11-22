@@ -1,0 +1,28 @@
+{% extends "schulte/base.html" %}
+{% block title %}Психологи{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Авиационные психологи</h1>
+      <p class="lede">Сотрудников в базе: {{ psychologists|length }}</p>
+    </div>
+    <a class="button button-copper" href="{% url 'psychologist_create' %}">Добавить психолога</a>
+  </div>
+  <section class="panel">
+    <table>
+      <tr><th>ФИО</th><th>Логин</th><th>Должность</th><th></th></tr>
+      {% for psychologist in psychologists %}
+        <tr>
+          <td>{{ psychologist.display_name }}</td>
+          <td>{{ psychologist.username }}</td>
+          <td>{{ psychologist.position|default:"—" }}</td>
+          <td class="actions">
+            <a href="{% url 'psychologist_edit' psychologist.pk %}">Изменить</a>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">Психологов в базе нет.</td></tr>
+      {% endfor %}
+    </table>
+  </section>
+{% endblock %}

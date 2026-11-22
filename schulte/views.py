@@ -11,7 +11,9 @@ from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_http_methods, require_POST
 
 from schulte.authz import role_required
-from schulte.forms import AssignForm, ConclusionForm, NormForm, PilotForm, ReportForm
+from schulte.forms import (
+    AdministratorForm, AssignForm, ConclusionForm, NormForm, PilotForm, PsychologistForm, ReportForm,
+)
 from schulte.models import (
     AdmissionNorm, Conclusion, LoginThrottle, SchulteTable, SecurityHandoff, SummaryReport,
     TestSession, User,
@@ -31,6 +33,10 @@ def _assigned_session(user: User) -> TestSession | None:
         .order_by("scheduled_at", "id")
         .first()
     )
+
+
+def _admin_exists() -> bool:
+    return User.objects.filter(role=User.Role.ADMIN).exists()
 
 
 def _clear_run(request) -> None:
@@ -61,9 +67,24 @@ def _run_session(request):
 
 
 @require_http_methods(["GET", "POST"])
+def setup_view(request):
+    """Первый администратор. После его появления страница больше не создаёт учётки."""
+    if _admin_exists():
+        return redirect("login")
+    form = AdministratorForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        admin = form.save()
+        login(request, admin)
+        return redirect("dashboard")
+    return render(request, "schulte/setup.html", {"form": form})
+
+
+@require_http_methods(["GET", "POST"])
 def login_view(request):
     if request.user.is_authenticated:
         return redirect("dashboard")
+    if request.method == "GET" and not User.objects.exists():
+        return redirect("setup")
     error = None
     hint = None
     if request.method == "POST":
@@ -86,12 +107,16 @@ def login_view(request):
                 login(request, user)
                 messages.success(request, f"Открыт интерфейс: {user.get_role_display().lower()}")
                 return redirect("dashboard")
-    return render(request, "schulte/login.html", {"error": error, "hint": hint})
+    return render(request, "schulte/login.html", {
+        "error": error,
+        "hint": hint,
+        "admin_exists": _admin_exists(),
+    })
 
 
 @require_http_methods(["GET", "POST"])
 def register_view(request):
-    """Регистрация пилота. Персонал в базе уже есть, пилотов заранее нет."""
+    """Регистрация пилота. Психолога и администратора эта форма не создаёт."""
     if request.user.is_authenticated:
         return redirect("dashboard")
     form = PilotForm(request.POST or None)
@@ -129,6 +154,7 @@ def dashboard(request):
     else:
         context["norm"] = AdmissionNorm.objects.order_by("-id").first()
         context["pilot_count"] = User.objects.filter(role=User.Role.PILOT).count()
+        context["psychologist_count"] = User.objects.filter(role=User.Role.PSYCHOLOGIST).count()
         context["reports"] = SummaryReport.objects.select_related("administrator")[:5]
     return render(request, "schulte/dashboard.html", context)
 
@@ -479,6 +505,41 @@ def dynamics_pilot(request, pk: int):
         "charts": charts,
         "enough": len(points) >= 2,
     })
+
+
+@role_required(User.Role.ADMIN)
+def psychologist_list(request):
+    psychologists = User.objects.filter(role=User.Role.PSYCHOLOGIST).order_by("full_name", "username")
+    return render(request, "schulte/psychologists.html", {"psychologists": psychologists})
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["GET", "POST"])
+def psychologist_create(request):
+    form = PsychologistForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        return redirect("psychologist_list")
+    return render(request, "schulte/psychologist_form.html", {"form": form, "title": "Новый психолог"})
+
+
+@role_required(User.Role.ADMIN)
+@require_http_methods(["GET", "POST"])
+def psychologist_edit(request, pk: int):
+    psychologist = get_object_or_404(User, pk=pk, role=User.Role.PSYCHOLOGIST)
+    form = PsychologistForm(
+        request.POST or None,
+        instance=psychologist,
+        initial={
+            "username": psychologist.username,
+            "full_name": psychologist.full_name,
+            "position": psychologist.position,
+        },
+    )
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        return redirect("psychologist_list")
+    return render(request, "schulte/psychologist_form.html", {"form": form, "title": "Данные психолога"})
 
 
 @role_required(User.Role.ADMIN)

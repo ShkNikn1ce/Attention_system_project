@@ -13,9 +13,7 @@
       <button type="submit">Войти</button>
     </form>
     <p class="demo">
-      Персонал входит готовыми учётными записями:<br>
-      администратор <code>admin</code> / <code>admin123</code><br>
-      психолог <code>psy</code> / <code>psy12345</code><br>
+      {% if not admin_exists %}<a href="{% url 'setup' %}">Создать администратора</a><br>{% endif %}
       <a href="{% url 'register' %}">Регистрация пилота</a>
     </p>
   </section>

@@ -128,6 +128,50 @@ class RegistrationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(User.objects.filter(username="newpilot").exists())
 
+    def test_admin_creates_psychologist_account(self):
+        admin = make_user("admin", User.Role.ADMIN)
+        self.client.force_login(admin)
+        created = self.client.post(reverse("psychologist_create"), {
+            "username": "psy2",
+            "password": "psy12345",
+            "full_name": "Иванова И.И.",
+            "position": "Авиационный психолог",
+        })
+        self.assertRedirects(created, reverse("psychologist_list"))
+        psy = User.objects.get(username="psy2")
+        self.assertEqual(psy.role, User.Role.PSYCHOLOGIST)
+        self.assertTrue(psy.check_password("psy12345"))
+        self.assertIsNone(psy.employee_number)
+        listing = self.client.get(reverse("psychologist_list"))
+        self.assertContains(listing, "Иванова И.И.")
+        self.client.logout()
+        logged = self.client.post(reverse("login"), {"username": "psy2", "password": "psy12345"})
+        self.assertRedirects(logged, reverse("dashboard"))
+
+    def test_pilot_cannot_create_psychologist(self):
+        make_user("pilot1", User.Role.PILOT, employee_number="T-001")
+        self.client.force_login(User.objects.get(username="pilot1"))
+        response = self.client.get(reverse("psychologist_create"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_setup_creates_administrator_once(self):
+        opened = self.client.get(reverse("login"))
+        self.assertRedirects(opened, reverse("setup"))
+        created = self.client.post(reverse("setup"), {
+            "username": "admin",
+            "password": "admin123",
+            "full_name": "Администратор",
+        })
+        self.assertRedirects(created, reverse("dashboard"))
+        admin = User.objects.get(username="admin")
+        self.assertEqual(admin.role, User.Role.ADMIN)
+        self.assertTrue(admin.is_superuser)
+        self.assertEqual(User.objects.filter(role=User.Role.PSYCHOLOGIST).count(), 0)
+        self.client.logout()
+        again = self.client.get(reverse("setup"))
+        self.assertRedirects(again, reverse("login"))
+        self.assertEqual(User.objects.filter(role=User.Role.ADMIN).count(), 1)
+
     def test_staff_username_is_not_taken_by_registration(self):
         make_user("admin", User.Role.ADMIN)
         response = self.client.post(reverse("register"), {
